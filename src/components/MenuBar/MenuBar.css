@@ -1,0 +1,170 @@
+.menubar {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  background: #2d2d30;
+  border-bottom: 1px solid #3e3e42;
+  padding: 0 8px;
+  gap: 2px;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 100;
+}
+
+.menubar-title {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #555;
+  letter-spacing: 1px;
+}
+
+.menu-item {
+  position: relative;
+  padding: 4px 10px;
+  font-size: 12px;
+  color: #cccccc;
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+}
+
+.menu-item:hover {
+  background: #3e3e42;
+}
+
+.dropdown {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  min-width: 200px;
+  background: #2d2d30;
+  border: 1px solid #3e3e42;
+  border-radius: 6px;
+  padding: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 200;
+}
+
+.dropdown button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 10px;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: #cccccc;
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.dropdown button:hover {
+  background: #094771;
+  color: #fff;
+}
+
+.dropdown button kbd {
+  margin-left: auto;
+  font-size: 10px;
+  color: #555;
+  font-family: "SF Mono", monospace;
+}
+
+.dropdown .divider {
+  height: 1px;
+  background: #3e3e42;
+  margin: 4px 0;
+}
+
+.menu-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 99;
+}
+
+/* PDF Dialog */
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 300;
+}
+
+.dialog {
+  background: #2d2d30;
+  border: 1px solid #3e3e42;
+  border-radius: 10px;
+  padding: 24px;
+  min-width: 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.dialog label {
+  font-size: 11px;
+  color: #858585;
+  margin-bottom: -4px;
+}
+
+.dialog select {
+  background: #1e1e1e;
+  border: 1px solid #3e3e42;
+  border-radius: 5px;
+  color: #ccc;
+  font-size: 12px;
+  padding: 6px 10px;
+  outline: none;
+}
+
+.dialog select:focus {
+  border-color: #1177bb;
+}
+
+.dialog-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  justify-content: flex-end;
+}
+
+.btn-cancel {
+  background: transparent;
+  border: 1px solid #3e3e42;
+  border-radius: 5px;
+  color: #858585;
+  font-size: 12px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+
+.btn-cancel:hover {
+  background: #3e3e42;
+}
+
+.btn-confirm {
+  background: #094771;
+  border: 1px solid #1177bb;
+  border-radius: 5px;
+  color: #4fc3f7;
+  font-size: 12px;
+  padding: 6px 16px;
+  cursor: pointer;
+}
+
+.btn-confirm:hover {
+  background: #0e5a8a;
+}

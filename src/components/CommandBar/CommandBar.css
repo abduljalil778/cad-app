@@ -1,0 +1,80 @@
+.command-bar {
+  height: 110px;
+  background: #1a1a1a;
+  border-top: 1px solid #3e3e42;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+
+.command-log {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 12px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.log-line {
+  font-size: 11px;
+  font-family: "SF Mono", "Menlo", monospace;
+  color: #858585;
+  line-height: 1.6;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.log-line:last-child {
+  color: #cccccc;
+}
+
+.command-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-top: 1px solid #2d2d30;
+  background: #1e1e1e;
+}
+
+.prompt {
+  font-size: 11px;
+  font-family: "SF Mono", "Menlo", monospace;
+  color: #4fc3f7;
+  white-space: nowrap;
+}
+
+.input-wrap {
+  flex: 1;
+  position: relative;
+}
+
+.command-input {
+  width: 100%;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-size: 12px;
+  font-family: "SF Mono", "Menlo", monospace;
+  caret-color: #4fc3f7;
+}
+
+.command-input::placeholder {
+  color: #3e3e42;
+}
+
+.suggestion {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-family: "SF Mono", "Menlo", monospace;
+  color: #555;
+  pointer-events: none;
+  white-space: nowrap;
+  padding-left: 2px;
+}
