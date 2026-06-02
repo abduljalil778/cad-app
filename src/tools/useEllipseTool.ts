@@ -64,6 +64,7 @@ export function useEllipseTool() {
         pushLog(`ELLIPSE center=(${center.x.toFixed(2)}, ${(-center.y).toFixed(2)}) rx=${rx.toFixed(2)} ry=${ry.toFixed(2)}`);
         setCenter(null);
         setPreview(null);
+        useCADStore.getState().setActiveTool('select');
       }
     },
     [center, activeLayerId, layerColor, addEntity, pushLog],

@@ -152,6 +152,7 @@ export default function CADCanvas() {
           setScaleInputActive(false);
           setScaleInputValue("");
         }
+        useCADStore.getState().setActiveTool('select');
       }
       // Modify tool: Enter confirms selection or finishes copy
       if (['move', 'copy', 'rotate', 'mirror', 'scale'].includes(activeTool)) {
@@ -672,20 +673,15 @@ export default function CADCanvas() {
           return false;
         });
         if (hit) {
-          if (e.shiftKey) {
-            // Shift+click: toggle selection
-            setSelectedIds(
-              selectedIds.includes(hit.id)
-                ? selectedIds.filter(id => id !== hit.id)
-                : [...selectedIds, hit.id]
-            );
+          // Toggle selection: add if not selected, remove if already selected
+          if (selectedIds.includes(hit.id)) {
+            setSelectedIds(selectedIds.filter(id => id !== hit.id));
           } else {
-            setSelectedIds([hit.id]);
+            setSelectedIds([...selectedIds, hit.id]);
           }
         } else {
-          if (!e.shiftKey) {
-            setSelectedIds([]);
-          }
+          // Click on empty space: deselect all
+          setSelectedIds([]);
         }
       }
     },
@@ -1405,16 +1401,7 @@ export default function CADCanvas() {
               fill="transparent"
             />
           )}
-          {snapScreen && snapPoint?.type === "grid" && (
-            <Circle
-              x={snapScreen.x}
-              y={snapScreen.y}
-              radius={4}
-              stroke="#555"
-              strokeWidth={1}
-              fill="transparent"
-            />
-          )}
+
           {/* Box selection rectangle (screen space) */}
           {boxSelectStart && boxSelectEnd && isBoxSelecting.current && (() => {
             const s = {

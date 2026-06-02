@@ -53,10 +53,9 @@ export function useLineTool() {
           y2: point.y,
         };
         addEntity(entity);
-
-        // AutoCAD behavior: titik akhir jadi titik awal berikutnya
-        setStartPoint(point);
+        setStartPoint(null);
         setPreview(null);
+        useCADStore.getState().setActiveTool("select");
       }
     },
     [startPoint, activeLayerId, layerColor, addEntity],

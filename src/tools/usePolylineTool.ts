@@ -46,6 +46,7 @@ export function usePolylineTool() {
     addEntity(entity);
     setPoints([]);
     setCursor(null);
+    useCADStore.getState().setActiveTool('select');
   }, [points, activeLayerId, layerColor, addEntity]);
 
   /** C → close polyline (sambung balik ke titik pertama) */
@@ -65,6 +66,7 @@ export function usePolylineTool() {
     addEntity(entity);
     setPoints([]);
     setCursor(null);
+    useCADStore.getState().setActiveTool('select');
   }, [points, activeLayerId, layerColor, addEntity]);
 
   /** Backspace → undo last point */

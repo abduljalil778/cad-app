@@ -64,6 +64,7 @@ export function useTextTool() {
       addEntity(entity);
       pushLog(`TEXT placed at (${insertPoint.x.toFixed(2)}, ${(-insertPoint.y).toFixed(2)})`);
       setInsertPoint(null);
+      useCADStore.getState().setActiveTool('select');
     },
     [insertPoint, activeLayerId, layerColor, addEntity, pushLog],
   );

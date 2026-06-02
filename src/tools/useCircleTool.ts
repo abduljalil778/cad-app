@@ -59,6 +59,7 @@ export function useCircleTool() {
         addEntity(entity);
         setCenter(null);
         setPreview(null);
+        useCADStore.getState().setActiveTool('select');
       }
     },
     [center, activeLayerId, layerColor, addEntity],

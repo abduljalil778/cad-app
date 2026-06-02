@@ -16,11 +16,10 @@ export interface SnapPoint {
     | "center"
     | "quadrant"
     | "intersection"
-    | "grid"
     | "nearest";
 }
 
-const SNAP_THRESHOLD = 12; // pixel radius untuk snap
+const SNAP_THRESHOLD = 0.5; // pixel radius untuk snap
 
 /**
  * Prioritas snap — semakin kecil angka, semakin tinggi prioritasnya.
@@ -32,8 +31,7 @@ const SNAP_PRIORITY: Record<SnapPoint["type"], number> = {
   center: 2,
   quadrant: 3,
   intersection: 4,
-  grid: 5,
-  nearest: 6,
+  nearest: 5,
 };
 
 // ─── Utilitas ──────────────────────────────────────────────────────────────────
@@ -165,12 +163,15 @@ function collectPolylineSnaps(poly: PolylineEntity): SnapPoint[] {
  * Mengembalikan titik potong hanya jika berada DI ATAS kedua segmen
  * (bukan pada perpanjangan garis).
  */
-function lineLineIntersection(
-  a: LineEntity,
-  b: LineEntity,
-): SnapPoint | null {
-  const x1 = a.x1, y1 = a.y1, x2 = a.x2, y2 = a.y2;
-  const x3 = b.x1, y3 = b.y1, x4 = b.x2, y4 = b.y2;
+function lineLineIntersection(a: LineEntity, b: LineEntity): SnapPoint | null {
+  const x1 = a.x1,
+    y1 = a.y1,
+    x2 = a.x2,
+    y2 = a.y2;
+  const x3 = b.x1,
+    y3 = b.y1,
+    x4 = b.x2,
+    y4 = b.y2;
 
   const denom = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4);
   if (Math.abs(denom) < 1e-10) return null; // garis sejajar / kolinear
@@ -359,19 +360,6 @@ function nearestPointOnPolyline(
   return best;
 }
 
-// ─── Snap to grid ──────────────────────────────────────────────────────────────
-
-/**
- * Snap ke grid
- */
-function snapToGrid(wx: number, wy: number, gridSize: number): SnapPoint {
-  return {
-    x: Math.round(wx / gridSize) * gridSize,
-    y: Math.round(wy / gridSize) * gridSize,
-    type: "grid",
-  };
-}
-
 // ─── Fungsi utama ──────────────────────────────────────────────────────────────
 
 /**
@@ -411,7 +399,7 @@ export function findSnapPoint(
   worldY: number,
   entities: CADEntity[],
   zoom: number,
-  gridSize: number,
+  _gridSize: number,
   snapEnabled: boolean,
 ): SnapPoint | null {
   if (!snapEnabled) return null;
@@ -452,7 +440,10 @@ export function findSnapPoint(
   // ── Cari kandidat terbaik ──
   for (const pt of candidates) {
     const d = dist(worldX, worldY, pt.x, pt.y);
-    if (d < threshold && isBetter(d, pt.type, bestDist, best?.type ?? "nearest")) {
+    if (
+      d < threshold &&
+      isBetter(d, pt.type, bestDist, best?.type ?? "nearest")
+    ) {
       bestDist = d;
       best = pt;
     }
@@ -490,13 +481,6 @@ export function findSnapPoint(
         }
       }
     }
-  }
-
-  // ── Fallback ke grid snap jika tidak ada entity snap ──
-  if (!best) {
-    const gridSnap = snapToGrid(worldX, worldY, gridSize);
-    const d = dist(worldX, worldY, gridSnap.x, gridSnap.y);
-    if (d < threshold) best = gridSnap;
   }
 
   return best;

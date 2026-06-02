@@ -102,14 +102,14 @@ export default React.memo(function SnapIndicator({
         </>
       );
 
-    case "grid":
+    case "nearest":
       return (
         <Circle
           x={sx}
           y={sy}
           radius={4}
-          stroke="#555"
-          strokeWidth={1}
+          stroke="#ffaa44"
+          strokeWidth={sw}
           fill="transparent"
           listening={false}
         />

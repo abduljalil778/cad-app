@@ -78,8 +78,9 @@ export function useOffsetTool() {
         if (newEntity) {
           addEntity(newEntity);
           setSelectedIds([]);
-          // Tetap di step 'side' untuk offset lagi dari entity yang sama
-          // Klik entity baru untuk mulai dari awal
+          setStep("select");
+          setSourceId(null);
+          useCADStore.getState().setActiveTool('select');
         }
       }
     },

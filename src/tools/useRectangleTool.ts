@@ -65,6 +65,7 @@ export function useRectangleTool() {
         addEntity(entity);
         setStartPoint(null);
         setPreview(null);
+        useCADStore.getState().setActiveTool('select');
       }
     },
     [startPoint, activeLayerId, layerColor, addEntity],

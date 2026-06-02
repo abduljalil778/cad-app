@@ -48,10 +48,10 @@ export function useDimensionTool(mode: DimMode = "linear") {
           dy: pt.y - p1.y,
         };
         addEntity(entity);
-        // AutoCAD behavior: mulai dimensi baru dari p2
-        setP1(p2);
+        setP1(null);
         setP2(null);
-        setStep("p2");
+        setStep("p1");
+        useCADStore.getState().setActiveTool('select');
       }
     },
     [step, p1, p2, mode, activeLayerId, addEntity],

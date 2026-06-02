@@ -122,6 +122,7 @@ export function useArcTool() {
         };
         addEntity(entity);
         cancel();
+        useCADStore.getState().setActiveTool('select');
       }
     },
     [step, p1, p2, activeLayerId, layerColor, addEntity],

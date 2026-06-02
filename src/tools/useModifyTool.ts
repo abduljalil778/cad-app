@@ -167,6 +167,7 @@ export function useModifyTool() {
             setPreviewEntities([]);
             workingIds.current = [];
             setSelectedIds([]);
+            useCADStore.getState().setActiveTool('select');
             break;
           }
           case "copy": {
@@ -195,6 +196,7 @@ export function useModifyTool() {
             setPreviewEntities([]);
             workingIds.current = [];
             setSelectedIds([]);
+            useCADStore.getState().setActiveTool('select');
             break;
           }
           case "mirror": {
@@ -239,6 +241,7 @@ export function useModifyTool() {
       setPreviewEntities([]);
       workingIds.current = [];
       setSelectedIds([]);
+      useCADStore.getState().setActiveTool('select');
     }
   }, [step, mode, selectedIds, pushLog, setSelectedIds]);
 
@@ -258,6 +261,7 @@ export function useModifyTool() {
       setPreviewEntities([]);
       workingIds.current = [];
       setSelectedIds([]);
+      useCADStore.getState().setActiveTool('select');
     },
     [step, mode, deleteEntities, pushLog, setSelectedIds],
   );
@@ -279,6 +283,7 @@ export function useModifyTool() {
       setPreviewEntities([]);
       workingIds.current = [];
       setSelectedIds([]);
+      useCADStore.getState().setActiveTool('select');
     },
     [step, mode, basePoint, entities, getWorkingEntities, setEntities, pushLog, setSelectedIds],
   );
@@ -291,6 +296,7 @@ export function useModifyTool() {
     setMirrorP2(null);
     setScaleFactorInput("");
     workingIds.current = [];
+    useCADStore.getState().setActiveTool('select');
   }, []);
 
   /** Get hint text for current step */
