@@ -53,9 +53,8 @@ export function useLineTool() {
           y2: point.y,
         };
         addEntity(entity);
-        setStartPoint(null);
+        setStartPoint(point);
         setPreview(null);
-        useCADStore.getState().setActiveTool("select");
       }
     },
     [startPoint, activeLayerId, layerColor, addEntity],

@@ -10,6 +10,10 @@ import { useArcTool } from "../../tools/useArcTool";
 import { useTextTool } from "../../tools/useTextTool";
 import { useEllipseTool } from "../../tools/useEllipseTool";
 import { useModifyTool } from "../../tools/useModifyTool";
+import { useTrimTool } from "../../tools/useTrimTool";
+import { useExtendTool } from "../../tools/useExtendTool";
+import { useFilletTool } from "../../tools/useFilletTool";
+import { useMeasureTool } from "../../tools/useMeasureTool";
 import {
   LineEntity,
   RectangleEntity,
@@ -84,6 +88,9 @@ export default function CADCanvas() {
   const [scaleInputActive, setScaleInputActive] = useState(false);
   const [scaleInputValue, setScaleInputValue] = useState("");
   const scaleInputRef = useRef<HTMLInputElement>(null);
+  const [filletInputActive, setFilletInputActive] = useState(false);
+  const [filletInputValue, setFilletInputValue] = useState('');
+  const filletInputRef = useRef<HTMLInputElement>(null);
 
   const {
     zoom,
@@ -118,6 +125,10 @@ export default function CADCanvas() {
   const textTool = useTextTool();
   const ellipseTool = useEllipseTool();
   const modifyTool = useModifyTool();
+  const trimTool = useTrimTool();
+  const extendTool = useExtendTool();
+  const filletTool = useFilletTool();
+  const measureTool = useMeasureTool();
 
   // ── Resize observer ───────────────────────────────────────────
   useEffect(() => {
@@ -144,6 +155,10 @@ export default function CADCanvas() {
         textTool.cancel();
         ellipseTool.cancel();
         modifyTool.cancel();
+        trimTool.cancel();
+        extendTool.cancel();
+        filletTool.cancel();
+        measureTool.cancel();
         if (textInputActive) {
           setTextInputActive(false);
           setTextInputValue("");
@@ -151,6 +166,10 @@ export default function CADCanvas() {
         if (scaleInputActive) {
           setScaleInputActive(false);
           setScaleInputValue("");
+        }
+        if (filletInputActive) {
+          setFilletInputActive(false);
+          setFilletInputValue('');
         }
         useCADStore.getState().setActiveTool('select');
       }
@@ -194,6 +213,18 @@ export default function CADCanvas() {
         setOffsetInputValue(String(offsetTool.distance));
         setOffsetInputActive(true);
         setTimeout(() => offsetInputRef.current?.focus(), 50);
+      }
+      if (activeTool === 'measure_area' && e.key === 'Enter') {
+        e.preventDefault();
+        measureTool.finishArea();
+        return;
+      }
+      if (activeTool === 'fillet' && e.key === 'Enter') {
+        e.preventDefault();
+        setFilletInputActive(true);
+        setFilletInputValue(String(filletTool.radius));
+        setTimeout(() => filletInputRef.current?.focus(), 50);
+        return;
       }
       if (e.key === "Delete" || e.key === "Backspace") {
         if (selectedIds.length > 0 && activeTool === "select") {
@@ -242,11 +273,17 @@ export default function CADCanvas() {
     textInputActive,
     modifyTool,
     scaleInputActive,
+    trimTool,
+    extendTool,
+    filletTool,
+    measureTool,
+    filletInputActive,
   ]);
 
   useEffect(() => {
     setOffsetInputActive(false);
     setScaleInputActive(false);
+    setFilletInputActive(false);
   }, [activeTool]);
 
   // ── Coordinate helpers ────────────────────────────────────────
@@ -383,6 +420,12 @@ export default function CADCanvas() {
         dimensionTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       if (activeTool === "text") textTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       if (activeTool === "ellipse") ellipseTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
+      if (['measure_dist', 'measure_angle', 'measure_area'].includes(activeTool)) {
+        measureTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
+      }
+      if (activeTool === 'fillet') {
+        filletTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
+      }
       if (modifyTool.isActive) {
         modifyTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       }
@@ -406,6 +449,8 @@ export default function CADCanvas() {
       ellipseTool,
       orthoMode,
       modifyTool,
+      measureTool,
+      filletTool,
     ],
   );
 
@@ -497,50 +542,87 @@ export default function CADCanvas() {
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
 
+      // Compute ortho-constrained cursor position for tools
+      let effectiveX = worldCursor.x;
+      let effectiveY = worldCursor.y;
+      if (orthoMode) {
+        let lastPt: {x: number, y: number} | null = null;
+        if (activeTool === 'line' && lineTool.startPoint) lastPt = lineTool.startPoint;
+        if (activeTool === 'polyline' && polylineTool.points.length > 0)
+          lastPt = polylineTool.points[polylineTool.points.length - 1];
+
+        if (lastPt) {
+          const dx = Math.abs(worldCursor.x - lastPt.x);
+          const dy = Math.abs(worldCursor.y - lastPt.y);
+          if (dx > dy) {
+            effectiveY = lastPt.y;
+          } else {
+            effectiveX = lastPt.x;
+          }
+        }
+      }
+
       if (activeTool === "line") {
-        lineTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        lineTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
       if (activeTool === "rectangle") {
-        rectangleTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        rectangleTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
       if (activeTool === "circle") {
-        circleTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        circleTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
       if (activeTool === "polyline") {
-        polylineTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        polylineTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
       if (activeTool === "arc") {
-        arcTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        arcTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
       if (activeTool === "dimension") {
-        dimensionTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        dimensionTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
       if (activeTool === "offset") {
-        offsetTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        offsetTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
       if (activeTool === "text") {
-        textTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        textTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         setTextInputActive(true);
         setTextInputValue("");
         setTimeout(() => textInputRef.current?.focus(), 50);
         return;
       }
       if (activeTool === "ellipse") {
-        ellipseTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        ellipseTool.onMouseClick(snapPoint, effectiveX, effectiveY);
+        return;
+      }
+
+      if (activeTool === 'trim') {
+        trimTool.onMouseClick(snapPoint, effectiveX, effectiveY);
+        return;
+      }
+      if (activeTool === 'extend') {
+        extendTool.onMouseClick(snapPoint, effectiveX, effectiveY);
+        return;
+      }
+      if (activeTool === 'fillet') {
+        filletTool.onMouseClick(snapPoint, effectiveX, effectiveY);
+        return;
+      }
+      if (['measure_dist', 'measure_angle', 'measure_area'].includes(activeTool)) {
+        measureTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
 
       // Modify tools: clicking during selecting step uses the select hit-test below
       // Clicking during basePoint/action step delegates to modify tool
       if (modifyTool.isActive && modifyTool.step !== 'selecting') {
-        modifyTool.onMouseClick(snapPoint, worldCursor.x, worldCursor.y);
+        modifyTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
 
@@ -562,14 +644,14 @@ export default function CADCanvas() {
               0,
               Math.min(
                 1,
-                ((worldCursor.x - l.x1) * dx + (worldCursor.y - l.y1) * dy) /
+                ((effectiveX - l.x1) * dx + (effectiveY - l.y1) * dy) /
                   (len * len),
               ),
             );
             return (
               Math.sqrt(
-                (l.x1 + t * dx - worldCursor.x) ** 2 +
-                  (l.y1 + t * dy - worldCursor.y) ** 2,
+                (l.x1 + t * dx - effectiveX) ** 2 +
+                  (l.y1 + t * dy - effectiveY) ** 2,
               ) < threshold
             );
           }
@@ -578,7 +660,7 @@ export default function CADCanvas() {
             return (
               Math.abs(
                 Math.sqrt(
-                  (worldCursor.x - c.cx) ** 2 + (worldCursor.y - c.cy) ** 2,
+                  (effectiveX - c.cx) ** 2 + (effectiveY - c.cy) ** 2,
                 ) - c.radius,
               ) < threshold
             );
@@ -586,17 +668,17 @@ export default function CADCanvas() {
           if (entity.type === "rectangle") {
             const r = entity as RectangleEntity;
             const onH =
-              Math.abs(worldCursor.y - r.y) < threshold ||
-              Math.abs(worldCursor.y - r.y - r.height) < threshold;
+              Math.abs(effectiveY - r.y) < threshold ||
+              Math.abs(effectiveY - r.y - r.height) < threshold;
             const onV =
-              Math.abs(worldCursor.x - r.x) < threshold ||
-              Math.abs(worldCursor.x - r.x - r.width) < threshold;
+              Math.abs(effectiveX - r.x) < threshold ||
+              Math.abs(effectiveX - r.x - r.width) < threshold;
             const inX =
-              worldCursor.x >= r.x - threshold &&
-              worldCursor.x <= r.x + r.width + threshold;
+              effectiveX >= r.x - threshold &&
+              effectiveX <= r.x + r.width + threshold;
             const inY =
-              worldCursor.y >= r.y - threshold &&
-              worldCursor.y <= r.y + r.height + threshold;
+              effectiveY >= r.y - threshold &&
+              effectiveY <= r.y + r.height + threshold;
             return (onH && inX) || (onV && inY);
           }
           if (entity.type === "polyline") {
@@ -614,14 +696,14 @@ export default function CADCanvas() {
                 0,
                 Math.min(
                   1,
-                  ((worldCursor.x - ax) * dx + (worldCursor.y - ay) * dy) /
+                  ((effectiveX - ax) * dx + (effectiveY - ay) * dy) /
                     (len * len),
                 ),
               );
               if (
                 Math.sqrt(
-                  (ax + t * dx - worldCursor.x) ** 2 +
-                    (ay + t * dy - worldCursor.y) ** 2,
+                  (ax + t * dx - effectiveX) ** 2 +
+                    (ay + t * dy - effectiveY) ** 2,
                 ) < threshold
               )
                 return true;
@@ -631,10 +713,10 @@ export default function CADCanvas() {
           if (entity.type === "arc") {
             const a = entity as ArcEntity;
             const dist = Math.sqrt(
-              (worldCursor.x - a.cx) ** 2 + (worldCursor.y - a.cy) ** 2,
+              (effectiveX - a.cx) ** 2 + (effectiveY - a.cy) ** 2,
             );
             if (Math.abs(dist - a.radius) > threshold) return false;
-            let angle = Math.atan2(worldCursor.y - a.cy, worldCursor.x - a.cx);
+            let angle = Math.atan2(effectiveY - a.cy, effectiveX - a.cx);
             let start = a.startAngle,
               end = a.endAngle;
             if (end < start) end += Math.PI * 2;
@@ -645,11 +727,11 @@ export default function CADCanvas() {
             const d = entity as DimensionEntity;
             return (
               Math.sqrt(
-                (worldCursor.x - d.x1) ** 2 + (worldCursor.y - d.y1) ** 2,
+                (effectiveX - d.x1) ** 2 + (effectiveY - d.y1) ** 2,
               ) <
                 threshold * 3 ||
               Math.sqrt(
-                (worldCursor.x - d.x2) ** 2 + (worldCursor.y - d.y2) ** 2,
+                (effectiveX - d.x2) ** 2 + (effectiveY - d.y2) ** 2,
               ) <
                 threshold * 3
             );
@@ -659,14 +741,14 @@ export default function CADCanvas() {
             const t = entity as TextEntity;
             const textWidth = t.text.length * t.fontSize * 0.6;
             const textHeight = t.fontSize * t.lineHeight * (t.text.split("\n").length);
-            return worldCursor.x >= t.x && worldCursor.x <= t.x + textWidth &&
-                   worldCursor.y >= t.y && worldCursor.y <= t.y + textHeight;
+            return effectiveX >= t.x && effectiveX <= t.x + textWidth &&
+                   effectiveY >= t.y && effectiveY <= t.y + textHeight;
           }
           if (entity.type === "ellipse") {
             const el = entity as EllipseEntity;
             // Approximate: check if point is near ellipse boundary
-            const dx = (worldCursor.x - el.cx) / el.rx;
-            const dy = (worldCursor.y - el.cy) / el.ry;
+            const dx = (effectiveX - el.cx) / el.rx;
+            const dy = (effectiveY - el.cy) / el.ry;
             const d = Math.sqrt(dx * dx + dy * dy);
             return Math.abs(d - 1) < threshold / Math.min(el.rx, el.ry);
           }
@@ -704,6 +786,11 @@ export default function CADCanvas() {
       zoom,
       layers,
       modifyTool,
+      trimTool,
+      extendTool,
+      filletTool,
+      measureTool,
+      orthoMode,
     ],
   );
 
@@ -754,6 +841,15 @@ export default function CADCanvas() {
     if (activeTool === "ellipse") {
       return ellipseTool.center ? "Click to set semi-axes (corner point)" : "Click to set ellipse center";
     }
+    if (activeTool === 'trim') return 'TRIM: Click entity segment to trim';
+    if (activeTool === 'extend') return 'EXTEND: Click entity near the end to extend';
+    if (activeTool === 'fillet') {
+      return filletTool.step === 'first'
+        ? `FILLET (r=${filletTool.radius}): Click first line | Enter = change radius`
+        : 'FILLET: Click second line';
+    }
+    if (measureTool.mode) return measureTool.getHintText();
+
     if (modifyTool.isActive) {
       return modifyTool.getHintText();
     }
@@ -1328,6 +1424,140 @@ export default function CADCanvas() {
               isSelected={false}
             />
           )}
+
+          {/* ── Measurement preview ── */}
+          {measureTool.points.length > 0 && (
+            <>
+              {measureTool.points.map((pt, i) => (
+                <Circle
+                  key={`mp_${i}`}
+                  x={pt.x}
+                  y={pt.y}
+                  radius={sw(3)}
+                  fill="#ffaa00"
+                  listening={false}
+                />
+              ))}
+              {/* Preview lines between points */}
+              {measureTool.points.length > 1 && (
+                <Line
+                  points={measureTool.points.flatMap(p => [p.x, p.y])}
+                  stroke="#ffaa00"
+                  strokeWidth={sw(1)}
+                  dash={[sw(4), sw(4)]}
+                  listening={false}
+                />
+              )}
+              {/* Preview line to cursor for area mode */}
+              {measureTool.mode === 'area' && measureTool.cursor && measureTool.points.length > 0 && (
+                <Line
+                  points={[
+                    measureTool.points[measureTool.points.length - 1].x,
+                    measureTool.points[measureTool.points.length - 1].y,
+                    measureTool.cursor.x,
+                    measureTool.cursor.y,
+                  ]}
+                  stroke="#ffaa00"
+                  strokeWidth={sw(0.5)}
+                  dash={[sw(3), sw(3)]}
+                  listening={false}
+                />
+              )}
+              {/* Close preview for area */}
+              {measureTool.mode === 'area' && measureTool.points.length >= 3 && (
+                <Line
+                  points={[
+                    measureTool.points[measureTool.points.length - 1].x,
+                    measureTool.points[measureTool.points.length - 1].y,
+                    measureTool.points[0].x,
+                    measureTool.points[0].y,
+                  ]}
+                  stroke="#ffaa00"
+                  strokeWidth={sw(0.5)}
+                  dash={[sw(2), sw(6)]}
+                  opacity={0.5}
+                  listening={false}
+                />
+              )}
+              {/* Distance preview line */}
+              {measureTool.mode === 'dist' && measureTool.points.length === 1 && measureTool.cursor && (
+                <Line
+                  points={[
+                    measureTool.points[0].x,
+                    measureTool.points[0].y,
+                    measureTool.cursor.x,
+                    measureTool.cursor.y,
+                  ]}
+                  stroke="#ffaa00"
+                  strokeWidth={sw(1)}
+                  dash={[sw(4), sw(4)]}
+                  listening={false}
+                />
+              )}
+            </>
+          )}
+
+          {/* ── Fillet first line highlight ── */}
+          {activeTool === 'fillet' && filletTool.firstLine && (
+            <Line
+              points={[
+                filletTool.firstLine.x1,
+                filletTool.firstLine.y1,
+                filletTool.firstLine.x2,
+                filletTool.firstLine.y2,
+              ]}
+              stroke="#00ffff"
+              strokeWidth={sw(2)}
+              listening={false}
+            />
+          )}
+
+          {/* ── Fillet preview (trimmed lines + arc) ── */}
+          {activeTool === 'fillet' && filletTool.previewResult && (
+            <>
+              {/* Preview trimmed line 1 */}
+              <Line
+                points={[
+                  filletTool.previewResult.line1.x1,
+                  filletTool.previewResult.line1.y1,
+                  filletTool.previewResult.line1.x2,
+                  filletTool.previewResult.line1.y2,
+                ]}
+                stroke="#00ffff"
+                strokeWidth={sw(1)}
+                dash={[sw(6), sw(4)]}
+                listening={false}
+              />
+              {/* Preview trimmed line 2 */}
+              <Line
+                points={[
+                  filletTool.previewResult.line2.x1,
+                  filletTool.previewResult.line2.y1,
+                  filletTool.previewResult.line2.x2,
+                  filletTool.previewResult.line2.y2,
+                ]}
+                stroke="#00ffff"
+                strokeWidth={sw(1)}
+                dash={[sw(6), sw(4)]}
+                listening={false}
+              />
+              {/* Preview fillet arc */}
+              <Path
+                data={arcToPath(
+                  filletTool.previewResult.arc.cx,
+                  filletTool.previewResult.arc.cy,
+                  filletTool.previewResult.arc.radius,
+                  filletTool.previewResult.arc.startAngle,
+                  filletTool.previewResult.arc.endAngle,
+                )}
+                stroke="#00ffff"
+                strokeWidth={sw(1)}
+                dash={[sw(6), sw(4)]}
+                fill="transparent"
+                listening={false}
+              />
+            </>
+          )}
         </Layer>
 
         {/* ── Snap indicators (screen space) ── */}
@@ -1532,6 +1762,39 @@ export default function CADCanvas() {
               if (e.key === 'Escape') {
                 setScaleInputActive(false);
                 setScaleInputValue('');
+              }
+            }}
+          />
+          <span className="offset-input-hint">
+            Enter = confirm  ESC = cancel
+          </span>
+        </div>
+      )}
+      {/* Fillet radius input */}
+      {filletInputActive && (
+        <div className="offset-input-overlay">
+          <span>Fillet radius:</span>
+          <input
+            ref={filletInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={filletInputValue}
+            onChange={(e) => setFilletInputValue(e.target.value)}
+            onKeyDown={(e) => {
+              e.stopPropagation();
+              if (e.key === 'Enter') {
+                const val = Number(filletInputValue);
+                if (!isNaN(val) && val >= 0) {
+                  filletTool.setFilletRadius(val);
+                }
+                setFilletInputActive(false);
+                setFilletInputValue('');
+              }
+              if (e.key === 'Escape') {
+                setFilletInputActive(false);
+                setFilletInputValue('');
               }
             }}
           />

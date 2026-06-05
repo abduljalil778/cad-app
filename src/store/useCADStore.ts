@@ -31,7 +31,10 @@ export type ActiveTool =
   | "scale"
   | "trim"
   | "extend"
-  | "fillet";
+  | "fillet"
+  | "measure_dist"
+  | "measure_angle"
+  | "measure_area";
 
 export interface Layer {
   id: string;

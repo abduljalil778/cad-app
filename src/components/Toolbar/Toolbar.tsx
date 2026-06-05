@@ -20,7 +20,11 @@ const tools: { id: ActiveTool; label: string; icon: string; group: string; short
   { id: "extend", label: "Extend", icon: "↦", group: "modify", shortcut: "EX" },
   { id: "fillet", label: "Fillet", icon: "◠", group: "modify", shortcut: "F" },
   { id: "scale", label: "Scale", icon: "⤡", group: "modify", shortcut: "SC" },
+  { id: "measure_dist", label: "Dist", icon: "📏", group: "measure", shortcut: "DIST" },
+  { id: "measure_angle", label: "Angle", icon: "∠", group: "measure", shortcut: "ANG" },
+  { id: "measure_area", label: "Area", icon: "⬡", group: "measure", shortcut: "AREA" },
 ];
+
 
 export default function Toolbar() {
   const { activeTool, setActiveTool, showGrid, toggleGrid, snapEnabled, toggleSnap, orthoMode, toggleOrtho } = useCADStore();
@@ -31,7 +35,7 @@ export default function Toolbar() {
     return acc;
   }, {});
 
-  const groupOrder = ["select", "draw", "annotate", "modify"];
+  const groupOrder = ["select", "draw", "annotate", "modify", "measure"];
 
   return (
     <div className="toolbar">

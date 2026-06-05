@@ -56,7 +56,7 @@ export interface ArcEntity extends BaseEntity {
 
 export interface DimensionEntity extends BaseEntity {
   type: "dimension";
-  dimType: "linear" | "aligned";
+  dimType: "linear" | "aligned" | "angular" | "radial" | "area";
   x1: number;
   y1: number; // titik ukur pertama
   x2: number;
@@ -64,6 +64,13 @@ export interface DimensionEntity extends BaseEntity {
   dx: number;
   dy: number; // offset garis dimensi dari titik ukur
   text?: string; // override teks, kosong = auto hitung
+  // For angular dimension
+  x3?: number;  // vertex point
+  y3?: number;
+  // For area dimension
+  areaPoints?: { x: number; y: number }[];
+  areaValue?: number;
+  perimeterValue?: number;
 }
 
 export interface TextEntity extends BaseEntity {
