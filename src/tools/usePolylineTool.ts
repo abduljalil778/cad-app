@@ -10,23 +10,52 @@ export function usePolylineTool() {
   const { addEntity, activeLayerId, layers } = useCADStore();
   const [points, setPoints] = useState<{ x: number; y: number }[]>([]);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
+  const [lengthValue, setLengthValue] = useState<string>("");
+  const [targetLength, setTargetLength] = useState<number | null>(null);
 
   const activeLayer = layers.find((l) => l.id === activeLayerId);
   const layerColor = activeLayer?.color ?? "#ffffff";
 
+  const computeSegmentEndpoint = (
+    start: { x: number; y: number },
+    direction: { x: number; y: number },
+    length: number,
+  ) => {
+    const dx = direction.x - start.x;
+    const dy = direction.y - start.y;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (dist < 0.0001) {
+      return { x: start.x + length, y: start.y };
+    }
+    const scale = length / dist;
+    return { x: start.x + dx * scale, y: start.y + dy * scale };
+  };
+
   const onMouseMove = useCallback(
     (snap: SnapPoint | null, wx: number, wy: number) => {
-      setCursor(snap ?? { x: wx, y: wy });
+      const pt = snap ?? { x: wx, y: wy };
+      if (points.length === 0) {
+        setCursor(pt);
+      } else if (targetLength != null) {
+        const lastPoint = points[points.length - 1];
+        setCursor(computeSegmentEndpoint(lastPoint, pt, targetLength));
+      } else {
+        setCursor(pt);
+      }
     },
-    [],
+    [points, targetLength],
   );
 
   const onMouseClick = useCallback(
     (snap: SnapPoint | null, wx: number, wy: number) => {
       const pt = snap ?? { x: wx, y: wy };
-      setPoints((prev) => [...prev, pt]);
+      const nextPoint =
+        points.length > 0 && targetLength != null
+          ? computeSegmentEndpoint(points[points.length - 1], pt, targetLength)
+          : pt;
+      setPoints((prev) => [...prev, nextPoint]);
     },
-    [],
+    [points, targetLength],
   );
 
   /** Enter → finish open polyline */
@@ -46,7 +75,7 @@ export function usePolylineTool() {
     addEntity(entity);
     setPoints([]);
     setCursor(null);
-    useCADStore.getState().setActiveTool('select');
+    useCADStore.getState().setActiveTool("select");
   }, [points, activeLayerId, layerColor, addEntity]);
 
   /** C → close polyline (sambung balik ke titik pertama) */
@@ -66,14 +95,36 @@ export function usePolylineTool() {
     addEntity(entity);
     setPoints([]);
     setCursor(null);
-    useCADStore.getState().setActiveTool('select');
+    useCADStore.getState().setActiveTool("select");
   }, [points, activeLayerId, layerColor, addEntity]);
 
   /** Backspace → undo last point */
+  const onLengthChange = useCallback(
+    (value: string) => {
+      setLengthValue(value);
+      const parsed = Number(value);
+      const nextLength = !Number.isNaN(parsed) && parsed > 0 ? parsed : null;
+      setTargetLength(nextLength);
+      if (points.length > 0 && cursor) {
+        if (nextLength != null) {
+          setCursor(
+            computeSegmentEndpoint(
+              points[points.length - 1],
+              cursor,
+              nextLength,
+            ),
+          );
+        } else {
+          setCursor(cursor);
+        }
+      }
+    },
+    [points, cursor],
+  );
+
   const undoLastPoint = useCallback(() => {
     setPoints((prev) => {
       if (prev.length <= 1) {
-        // If only 1 or 0 points, cancel entirely
         setCursor(null);
         return [];
       }
@@ -84,7 +135,21 @@ export function usePolylineTool() {
   const cancel = useCallback(() => {
     setPoints([]);
     setCursor(null);
+    setLengthValue("");
+    setTargetLength(null);
   }, []);
 
-  return { points, cursor, onMouseMove, onMouseClick, finish, close, cancel, undoLastPoint };
+  return {
+    points,
+    cursor,
+    lengthValue,
+    setLengthValue: onLengthChange,
+    targetLength,
+    onMouseMove,
+    onMouseClick,
+    finish,
+    close,
+    cancel,
+    undoLastPoint,
+  };
 }

@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from "react";
-import { Stage, Layer, Line, Circle, Rect, Path, Text, Ellipse } from "react-konva";
+import {
+  Stage,
+  Layer,
+  Line,
+  Circle,
+  Rect,
+  Path,
+  Text,
+  Ellipse,
+} from "react-konva";
 import { useCADStore } from "../../store/useCADStore";
 import { findSnapPoint, SnapPoint } from "../../engine/snap";
 import { useLineTool } from "../../tools/useLineTool";
@@ -30,7 +39,6 @@ import { useDimensionTool } from "../../tools/useDimensionTool";
 import { useOffsetTool } from "../../tools/useOffsetTool";
 import DimensionShape from "./DimensionShape";
 import { DimensionEntity } from "../../engine/entities";
-
 
 const GRID_PIXEL = 50;
 
@@ -80,17 +88,30 @@ export default function CADCanvas() {
   const [textInputValue, setTextInputValue] = useState("");
   const [textFontSize, setTextFontSize] = useState(0.3);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
-  const [boxSelectStart, setBoxSelectStart] = useState<{x: number, y: number} | null>(null);
-  const [boxSelectEnd, setBoxSelectEnd] = useState<{x: number, y: number} | null>(null);
+  const [boxSelectStart, setBoxSelectStart] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [boxSelectEnd, setBoxSelectEnd] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const isBoxSelecting = useRef(false);
   const isDragging = useRef(false);
-  const dragStartWorld = useRef<{x: number, y: number} | null>(null);
+  const dragStartWorld = useRef<{ x: number; y: number } | null>(null);
   const [scaleInputActive, setScaleInputActive] = useState(false);
   const [scaleInputValue, setScaleInputValue] = useState("");
   const scaleInputRef = useRef<HTMLInputElement>(null);
   const [filletInputActive, setFilletInputActive] = useState(false);
-  const [filletInputValue, setFilletInputValue] = useState('');
+  const [filletInputValue, setFilletInputValue] = useState("");
   const filletInputRef = useRef<HTMLInputElement>(null);
+  const lineLengthInputRef = useRef<HTMLInputElement>(null);
+  const rectWidthInputRef = useRef<HTMLInputElement>(null);
+  const rectHeightInputRef = useRef<HTMLInputElement>(null);
+  const circleRadiusInputRef = useRef<HTMLInputElement>(null);
+  const ellipseRxInputRef = useRef<HTMLInputElement>(null);
+  const ellipseRyInputRef = useRef<HTMLInputElement>(null);
+  const polylineLengthInputRef = useRef<HTMLInputElement>(null);
 
   const {
     zoom,
@@ -169,18 +190,18 @@ export default function CADCanvas() {
         }
         if (filletInputActive) {
           setFilletInputActive(false);
-          setFilletInputValue('');
+          setFilletInputValue("");
         }
-        useCADStore.getState().setActiveTool('select');
+        useCADStore.getState().setActiveTool("select");
       }
       // Modify tool: Enter confirms selection or finishes copy
-      if (['move', 'copy', 'rotate', 'mirror', 'scale'].includes(activeTool)) {
-        if (e.key === 'Enter') {
+      if (["move", "copy", "rotate", "mirror", "scale"].includes(activeTool)) {
+        if (e.key === "Enter") {
           e.preventDefault();
-          if (modifyTool.step === 'scaleInput') {
+          if (modifyTool.step === "scaleInput") {
             // Open scale input overlay
             setScaleInputActive(true);
-            setScaleInputValue('');
+            setScaleInputValue("");
             setTimeout(() => scaleInputRef.current?.focus(), 50);
           } else {
             modifyTool.confirmSelection();
@@ -188,12 +209,12 @@ export default function CADCanvas() {
           return;
         }
         // Mirror: Y/N for delete source
-        if (modifyTool.step === 'confirmDelete') {
-          if (e.key === 'y' || e.key === 'Y') {
+        if (modifyTool.step === "confirmDelete") {
+          if (e.key === "y" || e.key === "Y") {
             modifyTool.answerDeleteSource(true);
             return;
           }
-          if (e.key === 'n' || e.key === 'N') {
+          if (e.key === "n" || e.key === "N") {
             modifyTool.answerDeleteSource(false);
             return;
           }
@@ -214,12 +235,17 @@ export default function CADCanvas() {
         setOffsetInputActive(true);
         setTimeout(() => offsetInputRef.current?.focus(), 50);
       }
-      if (activeTool === 'measure_area' && e.key === 'Enter') {
+      if (activeTool === "line" && e.key === "Enter") {
+        e.preventDefault();
+        lineTool.finish();
+        return;
+      }
+      if (activeTool === "measure_area" && e.key === "Enter") {
         e.preventDefault();
         measureTool.finishArea();
         return;
       }
-      if (activeTool === 'fillet' && e.key === 'Enter') {
+      if (activeTool === "fillet" && e.key === "Enter") {
         e.preventDefault();
         setFilletInputActive(true);
         setFilletInputValue(String(filletTool.radius));
@@ -286,6 +312,36 @@ export default function CADCanvas() {
     setFilletInputActive(false);
   }, [activeTool]);
 
+  useEffect(() => {
+    if (activeTool === "line" && lineTool.startPoint) {
+      setTimeout(() => lineLengthInputRef.current?.focus(), 50);
+      return;
+    }
+    if (activeTool === "rectangle" && rectangleTool.startPoint) {
+      setTimeout(() => rectWidthInputRef.current?.focus(), 50);
+      return;
+    }
+    if (activeTool === "circle" && circleTool.center) {
+      setTimeout(() => circleRadiusInputRef.current?.focus(), 50);
+      return;
+    }
+    if (activeTool === "ellipse" && ellipseTool.center) {
+      setTimeout(() => ellipseRxInputRef.current?.focus(), 50);
+      return;
+    }
+    if (activeTool === "polyline" && polylineTool.points.length > 0) {
+      setTimeout(() => polylineLengthInputRef.current?.focus(), 50);
+      return;
+    }
+  }, [
+    activeTool,
+    lineTool.startPoint,
+    rectangleTool.startPoint,
+    circleTool.center,
+    ellipseTool.center,
+    polylineTool.points.length,
+  ]);
+
   // ── Coordinate helpers ────────────────────────────────────────
   const screenToWorld = useCallback(
     (sx: number, sy: number) => ({
@@ -312,53 +368,84 @@ export default function CADCanvas() {
   const isPanning = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
 
-  const handleMouseDown = useCallback((e: React.MouseEvent) => {
-    if (e.button === 1) {
-      isPanning.current = true;
-      lastPos.current = { x: e.clientX, y: e.clientY };
-    }
-    if (e.button === 0 && (activeTool === "select" || (modifyTool.isActive && modifyTool.step === 'selecting'))) {
-      const rect = containerRef.current!.getBoundingClientRect();
-      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-
-      // Check if clicking on a selected entity to start drag
-      if (selectedIds.length > 0) {
-        const threshold = 0.15 / (zoom * 0.5 + 0.5);
-        const onSelected = entities.some(entity => {
-          if (!selectedIds.includes(entity.id)) return false;
-          if (entity.type === 'line') {
-            const l = entity as any;
-            const dx = l.x2 - l.x1, dy = l.y2 - l.y1;
-            const len = Math.sqrt(dx * dx + dy * dy);
-            if (len === 0) return false;
-            const t = Math.max(0, Math.min(1, ((world.x - l.x1) * dx + (world.y - l.y1) * dy) / (len * len)));
-            return Math.sqrt((l.x1 + t * dx - world.x) ** 2 + (l.y1 + t * dy - world.y) ** 2) < threshold;
-          }
-          if (entity.type === 'circle') {
-            const c = entity as any;
-            return Math.abs(Math.sqrt((world.x - c.cx) ** 2 + (world.y - c.cy) ** 2) - c.radius) < threshold;
-          }
-          if (entity.type === 'rectangle') {
-            const r = entity as any;
-            return world.x >= r.x - threshold && world.x <= r.x + r.width + threshold &&
-                   world.y >= r.y - threshold && world.y <= r.y + r.height + threshold;
-          }
-          return false;
-        });
-
-        if (onSelected) {
-          isDragging.current = true;
-          dragStartWorld.current = world;
-          return;
-        }
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button === 1) {
+        isPanning.current = true;
+        lastPos.current = { x: e.clientX, y: e.clientY };
       }
+      if (
+        e.button === 0 &&
+        (activeTool === "select" ||
+          (modifyTool.isActive && modifyTool.step === "selecting"))
+      ) {
+        const rect = containerRef.current!.getBoundingClientRect();
+        const world = screenToWorld(
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+        );
 
-      // Start potential box selection
-      isBoxSelecting.current = true;
-      setBoxSelectStart(world);
-      setBoxSelectEnd(world);
-    }
-  }, [activeTool, screenToWorld, selectedIds, entities, zoom, modifyTool]);
+        // Check if clicking on a selected entity to start drag
+        if (selectedIds.length > 0) {
+          const threshold = 0.15 / (zoom * 0.5 + 0.5);
+          const onSelected = entities.some((entity) => {
+            if (!selectedIds.includes(entity.id)) return false;
+            if (entity.type === "line") {
+              const l = entity as any;
+              const dx = l.x2 - l.x1,
+                dy = l.y2 - l.y1;
+              const len = Math.sqrt(dx * dx + dy * dy);
+              if (len === 0) return false;
+              const t = Math.max(
+                0,
+                Math.min(
+                  1,
+                  ((world.x - l.x1) * dx + (world.y - l.y1) * dy) / (len * len),
+                ),
+              );
+              return (
+                Math.sqrt(
+                  (l.x1 + t * dx - world.x) ** 2 +
+                    (l.y1 + t * dy - world.y) ** 2,
+                ) < threshold
+              );
+            }
+            if (entity.type === "circle") {
+              const c = entity as any;
+              return (
+                Math.abs(
+                  Math.sqrt((world.x - c.cx) ** 2 + (world.y - c.cy) ** 2) -
+                    c.radius,
+                ) < threshold
+              );
+            }
+            if (entity.type === "rectangle") {
+              const r = entity as any;
+              return (
+                world.x >= r.x - threshold &&
+                world.x <= r.x + r.width + threshold &&
+                world.y >= r.y - threshold &&
+                world.y <= r.y + r.height + threshold
+              );
+            }
+            return false;
+          });
+
+          if (onSelected) {
+            isDragging.current = true;
+            dragStartWorld.current = world;
+            return;
+          }
+        }
+
+        // Start potential box selection
+        isBoxSelecting.current = true;
+        setBoxSelectStart(world);
+        setBoxSelectEnd(world);
+      }
+    },
+    [activeTool, screenToWorld, selectedIds, entities, zoom, modifyTool],
+  );
 
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
@@ -377,8 +464,9 @@ export default function CADCanvas() {
       // Apply ortho constraint for drawing tools
       let orthoWorld = world;
       if (orthoMode && (activeTool === "line" || activeTool === "polyline")) {
-        let lastPt: {x: number, y: number} | null = null;
-        if (activeTool === "line" && lineTool.startPoint) lastPt = lineTool.startPoint;
+        let lastPt: { x: number; y: number } | null = null;
+        if (activeTool === "line" && lineTool.startPoint)
+          lastPt = lineTool.startPoint;
         if (activeTool === "polyline" && polylineTool.points.length > 0)
           lastPt = polylineTool.points[polylineTool.points.length - 1];
 
@@ -404,26 +492,36 @@ export default function CADCanvas() {
       setSnapPoint(snap);
 
       // Box selection tracking
-      if (isBoxSelecting.current && (activeTool === "select" || (modifyTool.isActive && modifyTool.step === 'selecting'))) {
+      if (
+        isBoxSelecting.current &&
+        (activeTool === "select" ||
+          (modifyTool.isActive && modifyTool.step === "selecting"))
+      ) {
         setBoxSelectEnd(world);
       }
 
-      if (activeTool === "line") lineTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
+      if (activeTool === "line")
+        lineTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       if (activeTool === "rectangle")
         rectangleTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       if (activeTool === "circle")
         circleTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       if (activeTool === "polyline")
         polylineTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
-      if (activeTool === "arc") arcTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
+      if (activeTool === "arc")
+        arcTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       if (activeTool === "dimension")
         dimensionTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
-      if (activeTool === "text") textTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
-      if (activeTool === "ellipse") ellipseTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
-      if (['measure_dist', 'measure_angle', 'measure_area'].includes(activeTool)) {
+      if (activeTool === "text")
+        textTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
+      if (activeTool === "ellipse")
+        ellipseTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
+      if (
+        ["measure_dist", "measure_angle", "measure_area"].includes(activeTool)
+      ) {
         measureTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       }
-      if (activeTool === 'fillet') {
+      if (activeTool === "fillet") {
         filletTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       }
       if (modifyTool.isActive) {
@@ -454,89 +552,141 @@ export default function CADCanvas() {
     ],
   );
 
-  const handleMouseUp = useCallback((e: React.MouseEvent) => {
-    if (e.button === 1) isPanning.current = false;
+  const handleMouseUp = useCallback(
+    (e: React.MouseEvent) => {
+      if (e.button === 1) isPanning.current = false;
 
-    // Drag-to-move completion
-    if (isDragging.current && dragStartWorld.current) {
-      isDragging.current = false;
-      const rect = containerRef.current!.getBoundingClientRect();
-      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-      const dx = world.x - dragStartWorld.current.x;
-      const dy = world.y - dragStartWorld.current.y;
-      if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
-        moveEntities(selectedIds, dx, dy);
+      // Drag-to-move completion
+      if (isDragging.current && dragStartWorld.current) {
+        isDragging.current = false;
+        const rect = containerRef.current!.getBoundingClientRect();
+        const world = screenToWorld(
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+        );
+        const dx = world.x - dragStartWorld.current.x;
+        const dy = world.y - dragStartWorld.current.y;
+        if (Math.abs(dx) > 0.001 || Math.abs(dy) > 0.001) {
+          moveEntities(selectedIds, dx, dy);
+        }
+        dragStartWorld.current = null;
+        return;
       }
-      dragStartWorld.current = null;
-      return;
-    }
 
-    if (isBoxSelecting.current && (activeTool === "select" || (modifyTool.isActive && modifyTool.step === 'selecting')) && boxSelectStart) {
-      isBoxSelecting.current = false;
-      const rect = containerRef.current!.getBoundingClientRect();
-      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
-      const start = boxSelectStart;
-      const end = boxSelectEnd || world;
-      const minX = Math.min(start.x, end.x);
-      const maxX = Math.max(start.x, end.x);
-      const minY = Math.min(start.y, end.y);
-      const maxY = Math.max(start.y, end.y);
+      if (
+        isBoxSelecting.current &&
+        (activeTool === "select" ||
+          (modifyTool.isActive && modifyTool.step === "selecting")) &&
+        boxSelectStart
+      ) {
+        isBoxSelecting.current = false;
+        const rect = containerRef.current!.getBoundingClientRect();
+        const world = screenToWorld(
+          e.clientX - rect.left,
+          e.clientY - rect.top,
+        );
+        const start = boxSelectStart;
+        const end = boxSelectEnd || world;
+        const minX = Math.min(start.x, end.x);
+        const maxX = Math.max(start.x, end.x);
+        const minY = Math.min(start.y, end.y);
+        const maxY = Math.max(start.y, end.y);
 
-      // Only do box select if dragged more than a small threshold
-      const dragDist = Math.sqrt((end.x - start.x)**2 + (end.y - start.y)**2);
-      if (dragDist > 0.05) {
-        const isWindowSelect = end.x > start.x; // left-to-right = window
-        const hits = entities.filter(entity => {
-          // Check layer visibility
-          const entityLayer = layers.find(l => l.id === entity.layerId);
-          if (entityLayer && !entityLayer.visible) return false;
+        // Only do box select if dragged more than a small threshold
+        const dragDist = Math.sqrt(
+          (end.x - start.x) ** 2 + (end.y - start.y) ** 2,
+        );
+        if (dragDist > 0.05) {
+          const isWindowSelect = end.x > start.x; // left-to-right = window
+          const hits = entities.filter((entity) => {
+            // Check layer visibility
+            const entityLayer = layers.find((l) => l.id === entity.layerId);
+            if (entityLayer && !entityLayer.visible) return false;
 
-          // Get entity bounding box
-          let eMinX = Infinity, eMinY = Infinity, eMaxX = -Infinity, eMaxY = -Infinity;
-          if (entity.type === "line") {
-            eMinX = Math.min(entity.x1, entity.x2); eMaxX = Math.max(entity.x1, entity.x2);
-            eMinY = Math.min(entity.y1, entity.y2); eMaxY = Math.max(entity.y1, entity.y2);
-          } else if (entity.type === "circle") {
-            eMinX = entity.cx - entity.radius; eMaxX = entity.cx + entity.radius;
-            eMinY = entity.cy - entity.radius; eMaxY = entity.cy + entity.radius;
-          } else if (entity.type === "rectangle") {
-            eMinX = entity.x; eMaxX = entity.x + entity.width;
-            eMinY = entity.y; eMaxY = entity.y + entity.height;
-          } else if (entity.type === "polyline") {
-            for (const p of entity.points) {
-              eMinX = Math.min(eMinX, p.x); eMaxX = Math.max(eMaxX, p.x);
-              eMinY = Math.min(eMinY, p.y); eMaxY = Math.max(eMaxY, p.y);
+            // Get entity bounding box
+            let eMinX = Infinity,
+              eMinY = Infinity,
+              eMaxX = -Infinity,
+              eMaxY = -Infinity;
+            if (entity.type === "line") {
+              eMinX = Math.min(entity.x1, entity.x2);
+              eMaxX = Math.max(entity.x1, entity.x2);
+              eMinY = Math.min(entity.y1, entity.y2);
+              eMaxY = Math.max(entity.y1, entity.y2);
+            } else if (entity.type === "circle") {
+              eMinX = entity.cx - entity.radius;
+              eMaxX = entity.cx + entity.radius;
+              eMinY = entity.cy - entity.radius;
+              eMaxY = entity.cy + entity.radius;
+            } else if (entity.type === "rectangle") {
+              eMinX = entity.x;
+              eMaxX = entity.x + entity.width;
+              eMinY = entity.y;
+              eMaxY = entity.y + entity.height;
+            } else if (entity.type === "polyline") {
+              for (const p of entity.points) {
+                eMinX = Math.min(eMinX, p.x);
+                eMaxX = Math.max(eMaxX, p.x);
+                eMinY = Math.min(eMinY, p.y);
+                eMaxY = Math.max(eMaxY, p.y);
+              }
+            } else if (entity.type === "arc") {
+              eMinX = entity.cx - entity.radius;
+              eMaxX = entity.cx + entity.radius;
+              eMinY = entity.cy - entity.radius;
+              eMaxY = entity.cy + entity.radius;
+            } else if (entity.type === "ellipse") {
+              eMinX = entity.cx - entity.rx;
+              eMaxX = entity.cx + entity.rx;
+              eMinY = entity.cy - entity.ry;
+              eMaxY = entity.cy + entity.ry;
+            } else if (entity.type === "text") {
+              const t = entity as TextEntity;
+              const textWidth = t.text.length * t.fontSize * 0.6;
+              const textHeight =
+                t.fontSize * t.lineHeight * t.text.split("\n").length;
+              eMinX = t.x;
+              eMaxX = t.x + textWidth;
+              eMinY = t.y;
+              eMaxY = t.y + textHeight;
+            } else {
+              return false;
             }
-          } else if (entity.type === "arc") {
-            eMinX = entity.cx - entity.radius; eMaxX = entity.cx + entity.radius;
-            eMinY = entity.cy - entity.radius; eMaxY = entity.cy + entity.radius;
-          } else if (entity.type === "ellipse") {
-            eMinX = entity.cx - entity.rx; eMaxX = entity.cx + entity.rx;
-            eMinY = entity.cy - entity.ry; eMaxY = entity.cy + entity.ry;
-          } else if (entity.type === "text") {
-            const t = entity as TextEntity;
-            const textWidth = t.text.length * t.fontSize * 0.6;
-            const textHeight = t.fontSize * t.lineHeight * (t.text.split("\n").length);
-            eMinX = t.x; eMaxX = t.x + textWidth;
-            eMinY = t.y; eMaxY = t.y + textHeight;
-          } else {
-            return false;
-          }
 
-          if (isWindowSelect) {
-            // Window: entity must be fully inside
-            return eMinX >= minX && eMaxX <= maxX && eMinY >= minY && eMaxY <= maxY;
-          } else {
-            // Crossing: entity just needs to intersect
-            return !(eMaxX < minX || eMinX > maxX || eMaxY < minY || eMinY > maxY);
-          }
-        });
-        setSelectedIds(hits.map(e => e.id));
+            if (isWindowSelect) {
+              // Window: entity must be fully inside
+              return (
+                eMinX >= minX && eMaxX <= maxX && eMinY >= minY && eMaxY <= maxY
+              );
+            } else {
+              // Crossing: entity just needs to intersect
+              return !(
+                eMaxX < minX ||
+                eMinX > maxX ||
+                eMaxY < minY ||
+                eMinY > maxY
+              );
+            }
+          });
+          setSelectedIds(hits.map((e) => e.id));
+        }
+        setBoxSelectStart(null);
+        setBoxSelectEnd(null);
       }
-      setBoxSelectStart(null);
-      setBoxSelectEnd(null);
-    }
-  }, [activeTool, boxSelectStart, boxSelectEnd, screenToWorld, entities, layers, setSelectedIds, moveEntities, selectedIds, modifyTool]);
+    },
+    [
+      activeTool,
+      boxSelectStart,
+      boxSelectEnd,
+      screenToWorld,
+      entities,
+      layers,
+      setSelectedIds,
+      moveEntities,
+      selectedIds,
+      modifyTool,
+    ],
+  );
 
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
@@ -546,9 +696,10 @@ export default function CADCanvas() {
       let effectiveX = worldCursor.x;
       let effectiveY = worldCursor.y;
       if (orthoMode) {
-        let lastPt: {x: number, y: number} | null = null;
-        if (activeTool === 'line' && lineTool.startPoint) lastPt = lineTool.startPoint;
-        if (activeTool === 'polyline' && polylineTool.points.length > 0)
+        let lastPt: { x: number; y: number } | null = null;
+        if (activeTool === "line" && lineTool.startPoint)
+          lastPt = lineTool.startPoint;
+        if (activeTool === "polyline" && polylineTool.points.length > 0)
           lastPt = polylineTool.points[polylineTool.points.length - 1];
 
         if (lastPt) {
@@ -602,36 +753,41 @@ export default function CADCanvas() {
         return;
       }
 
-      if (activeTool === 'trim') {
+      if (activeTool === "trim") {
         trimTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
-      if (activeTool === 'extend') {
+      if (activeTool === "extend") {
         extendTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
-      if (activeTool === 'fillet') {
+      if (activeTool === "fillet") {
         filletTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
-      if (['measure_dist', 'measure_angle', 'measure_area'].includes(activeTool)) {
+      if (
+        ["measure_dist", "measure_angle", "measure_area"].includes(activeTool)
+      ) {
         measureTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
 
       // Modify tools: clicking during selecting step uses the select hit-test below
       // Clicking during basePoint/action step delegates to modify tool
-      if (modifyTool.isActive && modifyTool.step !== 'selecting') {
+      if (modifyTool.isActive && modifyTool.step !== "selecting") {
         modifyTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
       }
 
       // ── SELECT hit test ────────────────────────────────────────
-      if (activeTool === "select" || (modifyTool.isActive && modifyTool.step === 'selecting')) {
+      if (
+        activeTool === "select" ||
+        (modifyTool.isActive && modifyTool.step === "selecting")
+      ) {
         const threshold = 0.15 / (zoom * 0.5 + 0.5); // scales with zoom
         const hit = [...entities].reverse().find((entity) => {
           // Skip entities on hidden layers
-          const entityLayer = layers.find(l => l.id === entity.layerId);
+          const entityLayer = layers.find((l) => l.id === entity.layerId);
           if (entityLayer && !entityLayer.visible) return false;
 
           if (entity.type === "line") {
@@ -659,9 +815,8 @@ export default function CADCanvas() {
             const c = entity as CircleEntity;
             return (
               Math.abs(
-                Math.sqrt(
-                  (effectiveX - c.cx) ** 2 + (effectiveY - c.cy) ** 2,
-                ) - c.radius,
+                Math.sqrt((effectiveX - c.cx) ** 2 + (effectiveY - c.cy) ** 2) -
+                  c.radius,
               ) < threshold
             );
           }
@@ -726,13 +881,9 @@ export default function CADCanvas() {
           if (entity.type === "dimension") {
             const d = entity as DimensionEntity;
             return (
-              Math.sqrt(
-                (effectiveX - d.x1) ** 2 + (effectiveY - d.y1) ** 2,
-              ) <
+              Math.sqrt((effectiveX - d.x1) ** 2 + (effectiveY - d.y1) ** 2) <
                 threshold * 3 ||
-              Math.sqrt(
-                (effectiveX - d.x2) ** 2 + (effectiveY - d.y2) ** 2,
-              ) <
+              Math.sqrt((effectiveX - d.x2) ** 2 + (effectiveY - d.y2) ** 2) <
                 threshold * 3
             );
           }
@@ -740,9 +891,14 @@ export default function CADCanvas() {
             // Simple bounding box hit test
             const t = entity as TextEntity;
             const textWidth = t.text.length * t.fontSize * 0.6;
-            const textHeight = t.fontSize * t.lineHeight * (t.text.split("\n").length);
-            return effectiveX >= t.x && effectiveX <= t.x + textWidth &&
-                   effectiveY >= t.y && effectiveY <= t.y + textHeight;
+            const textHeight =
+              t.fontSize * t.lineHeight * t.text.split("\n").length;
+            return (
+              effectiveX >= t.x &&
+              effectiveX <= t.x + textWidth &&
+              effectiveY >= t.y &&
+              effectiveY <= t.y + textHeight
+            );
           }
           if (entity.type === "ellipse") {
             const el = entity as EllipseEntity;
@@ -757,7 +913,7 @@ export default function CADCanvas() {
         if (hit) {
           // Toggle selection: add if not selected, remove if already selected
           if (selectedIds.includes(hit.id)) {
-            setSelectedIds(selectedIds.filter(id => id !== hit.id));
+            setSelectedIds(selectedIds.filter((id) => id !== hit.id));
           } else {
             setSelectedIds([...selectedIds, hit.id]);
           }
@@ -836,17 +992,22 @@ export default function CADCanvas() {
       return "Enter = finish  |  C = close  |  Backspace = undo  |  ESC = cancel";
 
     if (activeTool === "text") {
-      return textTool.insertPoint ? "Type text and press Enter" : "Click to set text position";
+      return textTool.insertPoint
+        ? "Type text and press Enter"
+        : "Click to set text position";
     }
     if (activeTool === "ellipse") {
-      return ellipseTool.center ? "Click to set semi-axes (corner point)" : "Click to set ellipse center";
+      return ellipseTool.center
+        ? "Click to set semi-axes (corner point)"
+        : "Click to set ellipse center";
     }
-    if (activeTool === 'trim') return 'TRIM: Click entity segment to trim';
-    if (activeTool === 'extend') return 'EXTEND: Click entity near the end to extend';
-    if (activeTool === 'fillet') {
-      return filletTool.step === 'first'
+    if (activeTool === "trim") return "TRIM: Click entity segment to trim";
+    if (activeTool === "extend")
+      return "EXTEND: Click entity near the end to extend";
+    if (activeTool === "fillet") {
+      return filletTool.step === "first"
         ? `FILLET (r=${filletTool.radius}): Click first line | Enter = change radius`
-        : 'FILLET: Click second line';
+        : "FILLET: Click second line";
     }
     if (measureTool.mode) return measureTool.getHintText();
 
@@ -907,7 +1068,7 @@ export default function CADCanvas() {
           {/* Committed entities */}
           {entities.map((entity) => {
             // Layer visibility check
-            const entityLayer = layers.find(l => l.id === entity.layerId);
+            const entityLayer = layers.find((l) => l.id === entity.layerId);
             if (entityLayer && !entityLayer.visible) return null;
 
             const sel = selectedIds.includes(entity.id);
@@ -1011,7 +1172,10 @@ export default function CADCanvas() {
                   text={t.text}
                   fontSize={t.fontSize}
                   fontFamily={t.fontFamily}
-                  fontStyle={`${t.bold ? "bold" : ""} ${t.italic ? "italic" : ""}`.trim() || "normal"}
+                  fontStyle={
+                    `${t.bold ? "bold" : ""} ${t.italic ? "italic" : ""}`.trim() ||
+                    "normal"
+                  }
                   fill={stroke}
                   rotation={(t.rotation * 180) / Math.PI}
                   align={t.alignment}
@@ -1214,23 +1378,35 @@ export default function CADCanvas() {
           )}
 
           {/* ── Text insert cursor ── */}
-          {activeTool === 'text' && textTool.cursor && !textTool.insertPoint && (
-            <>
-              <Line
-                points={[textTool.cursor.x, textTool.cursor.y - sw(8), textTool.cursor.x, textTool.cursor.y + sw(8)]}
-                stroke="#4fc3f7"
-                strokeWidth={sw(1)}
-                listening={false}
-              />
-              <Line
-                points={[textTool.cursor.x - sw(4), textTool.cursor.y, textTool.cursor.x + sw(4), textTool.cursor.y]}
-                stroke="#4fc3f7"
-                strokeWidth={sw(1)}
-                listening={false}
-              />
-            </>
-          )}
-          {activeTool === 'text' && textTool.insertPoint && (
+          {activeTool === "text" &&
+            textTool.cursor &&
+            !textTool.insertPoint && (
+              <>
+                <Line
+                  points={[
+                    textTool.cursor.x,
+                    textTool.cursor.y - sw(8),
+                    textTool.cursor.x,
+                    textTool.cursor.y + sw(8),
+                  ]}
+                  stroke="#4fc3f7"
+                  strokeWidth={sw(1)}
+                  listening={false}
+                />
+                <Line
+                  points={[
+                    textTool.cursor.x - sw(4),
+                    textTool.cursor.y,
+                    textTool.cursor.x + sw(4),
+                    textTool.cursor.y,
+                  ]}
+                  stroke="#4fc3f7"
+                  strokeWidth={sw(1)}
+                  listening={false}
+                />
+              </>
+            )}
+          {activeTool === "text" && textTool.insertPoint && (
             <Circle
               x={textTool.insertPoint.x}
               y={textTool.insertPoint.y}
@@ -1242,11 +1418,11 @@ export default function CADCanvas() {
 
           {/* ── Modify tool preview (ghost entities) ── */}
           {modifyTool.previewEntities.map((entity, idx) => {
-            const stroke = '#00bcd4';
+            const stroke = "#00bcd4";
             const sw1 = sw(1);
             const dashPattern = [sw(6), sw(4)];
 
-            if (entity.type === 'line') {
+            if (entity.type === "line") {
               return (
                 <Line
                   key={`mp_${idx}`}
@@ -1258,7 +1434,7 @@ export default function CADCanvas() {
                 />
               );
             }
-            if (entity.type === 'circle') {
+            if (entity.type === "circle") {
               return (
                 <Circle
                   key={`mp_${idx}`}
@@ -1273,7 +1449,7 @@ export default function CADCanvas() {
                 />
               );
             }
-            if (entity.type === 'rectangle') {
+            if (entity.type === "rectangle") {
               return (
                 <Rect
                   key={`mp_${idx}`}
@@ -1289,9 +1465,10 @@ export default function CADCanvas() {
                 />
               );
             }
-            if (entity.type === 'polyline') {
-              const pts = entity.points.flatMap(p => [p.x, p.y]);
-              if (entity.closed) pts.push(entity.points[0].x, entity.points[0].y);
+            if (entity.type === "polyline") {
+              const pts = entity.points.flatMap((p) => [p.x, p.y]);
+              if (entity.closed)
+                pts.push(entity.points[0].x, entity.points[0].y);
               return (
                 <Line
                   key={`mp_${idx}`}
@@ -1303,11 +1480,17 @@ export default function CADCanvas() {
                 />
               );
             }
-            if (entity.type === 'arc') {
+            if (entity.type === "arc") {
               return (
                 <Path
                   key={`mp_${idx}`}
-                  data={arcToPath(entity.cx, entity.cy, entity.radius, entity.startAngle, entity.endAngle)}
+                  data={arcToPath(
+                    entity.cx,
+                    entity.cy,
+                    entity.radius,
+                    entity.startAngle,
+                    entity.endAngle,
+                  )}
                   stroke={stroke}
                   strokeWidth={sw1}
                   dash={dashPattern}
@@ -1316,7 +1499,7 @@ export default function CADCanvas() {
                 />
               );
             }
-            if (entity.type === 'ellipse') {
+            if (entity.type === "ellipse") {
               return (
                 <Ellipse
                   key={`mp_${idx}`}
@@ -1333,7 +1516,7 @@ export default function CADCanvas() {
                 />
               );
             }
-            if (entity.type === 'text') {
+            if (entity.type === "text") {
               return (
                 <Text
                   key={`mp_${idx}`}
@@ -1350,7 +1533,7 @@ export default function CADCanvas() {
                 />
               );
             }
-            if (entity.type === 'dimension') {
+            if (entity.type === "dimension") {
               return (
                 <DimensionShape
                   key={`mp_${idx}`}
@@ -1376,26 +1559,42 @@ export default function CADCanvas() {
           )}
 
           {/* ── Modify tool: mirror line preview ── */}
-          {modifyTool.mode === 'mirror' && modifyTool.basePoint && modifyTool.step === 'action' && modifyTool.cursor && (
-            <Line
-              points={[modifyTool.basePoint.x, modifyTool.basePoint.y, modifyTool.cursor.x, modifyTool.cursor.y]}
-              stroke="#ff4444"
-              strokeWidth={sw(1)}
-              dash={[sw(4), sw(4)]}
-              listening={false}
-            />
-          )}
+          {modifyTool.mode === "mirror" &&
+            modifyTool.basePoint &&
+            modifyTool.step === "action" &&
+            modifyTool.cursor && (
+              <Line
+                points={[
+                  modifyTool.basePoint.x,
+                  modifyTool.basePoint.y,
+                  modifyTool.cursor.x,
+                  modifyTool.cursor.y,
+                ]}
+                stroke="#ff4444"
+                strokeWidth={sw(1)}
+                dash={[sw(4), sw(4)]}
+                listening={false}
+              />
+            )}
 
           {/* ── Modify tool: rotate angle line preview ── */}
-          {modifyTool.mode === 'rotate' && modifyTool.basePoint && modifyTool.step === 'action' && modifyTool.cursor && (
-            <Line
-              points={[modifyTool.basePoint.x, modifyTool.basePoint.y, modifyTool.cursor.x, modifyTool.cursor.y]}
-              stroke="#ffaa44"
-              strokeWidth={sw(0.5)}
-              dash={[sw(3), sw(3)]}
-              listening={false}
-            />
-          )}
+          {modifyTool.mode === "rotate" &&
+            modifyTool.basePoint &&
+            modifyTool.step === "action" &&
+            modifyTool.cursor && (
+              <Line
+                points={[
+                  modifyTool.basePoint.x,
+                  modifyTool.basePoint.y,
+                  modifyTool.cursor.x,
+                  modifyTool.cursor.y,
+                ]}
+                stroke="#ffaa44"
+                strokeWidth={sw(0.5)}
+                dash={[sw(3), sw(3)]}
+                listening={false}
+              />
+            )}
 
           {/* ── Dimension preview ── */}
           {activeTool === "dimension" && dimensionTool.p1 && (
@@ -1441,7 +1640,7 @@ export default function CADCanvas() {
               {/* Preview lines between points */}
               {measureTool.points.length > 1 && (
                 <Line
-                  points={measureTool.points.flatMap(p => [p.x, p.y])}
+                  points={measureTool.points.flatMap((p) => [p.x, p.y])}
                   stroke="#ffaa00"
                   strokeWidth={sw(1)}
                   dash={[sw(4), sw(4)]}
@@ -1449,56 +1648,61 @@ export default function CADCanvas() {
                 />
               )}
               {/* Preview line to cursor for area mode */}
-              {measureTool.mode === 'area' && measureTool.cursor && measureTool.points.length > 0 && (
-                <Line
-                  points={[
-                    measureTool.points[measureTool.points.length - 1].x,
-                    measureTool.points[measureTool.points.length - 1].y,
-                    measureTool.cursor.x,
-                    measureTool.cursor.y,
-                  ]}
-                  stroke="#ffaa00"
-                  strokeWidth={sw(0.5)}
-                  dash={[sw(3), sw(3)]}
-                  listening={false}
-                />
-              )}
+              {measureTool.mode === "area" &&
+                measureTool.cursor &&
+                measureTool.points.length > 0 && (
+                  <Line
+                    points={[
+                      measureTool.points[measureTool.points.length - 1].x,
+                      measureTool.points[measureTool.points.length - 1].y,
+                      measureTool.cursor.x,
+                      measureTool.cursor.y,
+                    ]}
+                    stroke="#ffaa00"
+                    strokeWidth={sw(0.5)}
+                    dash={[sw(3), sw(3)]}
+                    listening={false}
+                  />
+                )}
               {/* Close preview for area */}
-              {measureTool.mode === 'area' && measureTool.points.length >= 3 && (
-                <Line
-                  points={[
-                    measureTool.points[measureTool.points.length - 1].x,
-                    measureTool.points[measureTool.points.length - 1].y,
-                    measureTool.points[0].x,
-                    measureTool.points[0].y,
-                  ]}
-                  stroke="#ffaa00"
-                  strokeWidth={sw(0.5)}
-                  dash={[sw(2), sw(6)]}
-                  opacity={0.5}
-                  listening={false}
-                />
-              )}
+              {measureTool.mode === "area" &&
+                measureTool.points.length >= 3 && (
+                  <Line
+                    points={[
+                      measureTool.points[measureTool.points.length - 1].x,
+                      measureTool.points[measureTool.points.length - 1].y,
+                      measureTool.points[0].x,
+                      measureTool.points[0].y,
+                    ]}
+                    stroke="#ffaa00"
+                    strokeWidth={sw(0.5)}
+                    dash={[sw(2), sw(6)]}
+                    opacity={0.5}
+                    listening={false}
+                  />
+                )}
               {/* Distance preview line */}
-              {measureTool.mode === 'dist' && measureTool.points.length === 1 && measureTool.cursor && (
-                <Line
-                  points={[
-                    measureTool.points[0].x,
-                    measureTool.points[0].y,
-                    measureTool.cursor.x,
-                    measureTool.cursor.y,
-                  ]}
-                  stroke="#ffaa00"
-                  strokeWidth={sw(1)}
-                  dash={[sw(4), sw(4)]}
-                  listening={false}
-                />
-              )}
+              {measureTool.mode === "dist" &&
+                measureTool.points.length === 1 &&
+                measureTool.cursor && (
+                  <Line
+                    points={[
+                      measureTool.points[0].x,
+                      measureTool.points[0].y,
+                      measureTool.cursor.x,
+                      measureTool.cursor.y,
+                    ]}
+                    stroke="#ffaa00"
+                    strokeWidth={sw(1)}
+                    dash={[sw(4), sw(4)]}
+                    listening={false}
+                  />
+                )}
             </>
           )}
 
           {/* ── Fillet first line highlight ── */}
-          {activeTool === 'fillet' && filletTool.firstLine && (
+          {activeTool === "fillet" && filletTool.firstLine && (
             <Line
               points={[
                 filletTool.firstLine.x1,
@@ -1513,7 +1717,7 @@ export default function CADCanvas() {
           )}
 
           {/* ── Fillet preview (trimmed lines + arc) ── */}
-          {activeTool === 'fillet' && filletTool.previewResult && (
+          {activeTool === "fillet" && filletTool.previewResult && (
             <>
               {/* Preview trimmed line 1 */}
               <Line
@@ -1610,12 +1814,22 @@ export default function CADCanvas() {
           {snapScreen && snapPoint?.type === "intersection" && (
             <>
               <Line
-                points={[snapScreen.x - 5, snapScreen.y - 5, snapScreen.x + 5, snapScreen.y + 5]}
+                points={[
+                  snapScreen.x - 5,
+                  snapScreen.y - 5,
+                  snapScreen.x + 5,
+                  snapScreen.y + 5,
+                ]}
                 stroke="#ff4444"
                 strokeWidth={1.5}
               />
               <Line
-                points={[snapScreen.x + 5, snapScreen.y - 5, snapScreen.x - 5, snapScreen.y + 5]}
+                points={[
+                  snapScreen.x + 5,
+                  snapScreen.y - 5,
+                  snapScreen.x - 5,
+                  snapScreen.y + 5,
+                ]}
                 stroke="#ff4444"
                 strokeWidth={1.5}
               />
@@ -1633,29 +1847,34 @@ export default function CADCanvas() {
           )}
 
           {/* Box selection rectangle (screen space) */}
-          {boxSelectStart && boxSelectEnd && isBoxSelecting.current && (() => {
-            const s = {
-              x: boxSelectStart.x * GRID_PIXEL * zoom + panOffset.x,
-              y: boxSelectStart.y * GRID_PIXEL * zoom + panOffset.y,
-            };
-            const e = {
-              x: boxSelectEnd.x * GRID_PIXEL * zoom + panOffset.x,
-              y: boxSelectEnd.y * GRID_PIXEL * zoom + panOffset.y,
-            };
-            const isWindow = boxSelectEnd.x > boxSelectStart.x;
-            return (
-              <Rect
-                x={Math.min(s.x, e.x)}
-                y={Math.min(s.y, e.y)}
-                width={Math.abs(e.x - s.x)}
-                height={Math.abs(e.y - s.y)}
-                stroke={isWindow ? "#2196f3" : "#4caf50"}
-                strokeWidth={1}
-                fill={isWindow ? "rgba(33,150,243,0.1)" : "rgba(76,175,80,0.1)"}
-                dash={isWindow ? undefined : [6, 3]}
-              />
-            );
-          })()}
+          {boxSelectStart &&
+            boxSelectEnd &&
+            isBoxSelecting.current &&
+            (() => {
+              const s = {
+                x: boxSelectStart.x * GRID_PIXEL * zoom + panOffset.x,
+                y: boxSelectStart.y * GRID_PIXEL * zoom + panOffset.y,
+              };
+              const e = {
+                x: boxSelectEnd.x * GRID_PIXEL * zoom + panOffset.x,
+                y: boxSelectEnd.y * GRID_PIXEL * zoom + panOffset.y,
+              };
+              const isWindow = boxSelectEnd.x > boxSelectStart.x;
+              return (
+                <Rect
+                  x={Math.min(s.x, e.x)}
+                  y={Math.min(s.y, e.y)}
+                  width={Math.abs(e.x - s.x)}
+                  height={Math.abs(e.y - s.y)}
+                  stroke={isWindow ? "#2196f3" : "#4caf50"}
+                  strokeWidth={1}
+                  fill={
+                    isWindow ? "rgba(33,150,243,0.1)" : "rgba(76,175,80,0.1)"
+                  }
+                  dash={isWindow ? undefined : [6, 3]}
+                />
+              );
+            })()}
         </Layer>
       </Stage>
 
@@ -1697,13 +1916,16 @@ export default function CADCanvas() {
           <div className="text-input-header">
             <span>Text Input</span>
             <div className="text-input-options">
-              <label>Size:
+              <label>
+                Size:
                 <input
                   type="number"
                   min="0.05"
                   step="0.05"
                   value={textFontSize}
-                  onChange={(e) => setTextFontSize(Number(e.target.value) || 0.3)}
+                  onChange={(e) =>
+                    setTextFontSize(Number(e.target.value) || 0.3)
+                  }
                   className="text-size-input"
                 />
               </label>
@@ -1717,7 +1939,7 @@ export default function CADCanvas() {
             placeholder="Type text here... (Enter to confirm, Shift+Enter for new line)"
             onKeyDown={(e) => {
               e.stopPropagation();
-              if (e.key === 'Enter' && !e.shiftKey) {
+              if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 if (textInputValue.trim()) {
                   textTool.commit(textInputValue, { fontSize: textFontSize });
@@ -1725,7 +1947,7 @@ export default function CADCanvas() {
                 setTextInputActive(false);
                 setTextInputValue("");
               }
-              if (e.key === 'Escape') {
+              if (e.key === "Escape") {
                 textTool.cancel();
                 setTextInputActive(false);
                 setTextInputValue("");
@@ -1751,22 +1973,22 @@ export default function CADCanvas() {
             onChange={(e) => setScaleInputValue(e.target.value)}
             onKeyDown={(e) => {
               e.stopPropagation();
-              if (e.key === 'Enter') {
+              if (e.key === "Enter") {
                 const val = Number(scaleInputValue);
                 if (!isNaN(val) && val > 0) {
                   modifyTool.applyScale(val);
                 }
                 setScaleInputActive(false);
-                setScaleInputValue('');
+                setScaleInputValue("");
               }
-              if (e.key === 'Escape') {
+              if (e.key === "Escape") {
                 setScaleInputActive(false);
-                setScaleInputValue('');
+                setScaleInputValue("");
               }
             }}
           />
           <span className="offset-input-hint">
-            Enter = confirm  ESC = cancel
+            Enter = confirm ESC = cancel
           </span>
         </div>
       )}
@@ -1784,22 +2006,127 @@ export default function CADCanvas() {
             onChange={(e) => setFilletInputValue(e.target.value)}
             onKeyDown={(e) => {
               e.stopPropagation();
-              if (e.key === 'Enter') {
+              if (e.key === "Enter") {
                 const val = Number(filletInputValue);
                 if (!isNaN(val) && val >= 0) {
                   filletTool.setFilletRadius(val);
                 }
                 setFilletInputActive(false);
-                setFilletInputValue('');
+                setFilletInputValue("");
               }
-              if (e.key === 'Escape') {
+              if (e.key === "Escape") {
                 setFilletInputActive(false);
-                setFilletInputValue('');
+                setFilletInputValue("");
               }
             }}
           />
           <span className="offset-input-hint">
-            Enter = confirm  ESC = cancel
+            Enter = confirm ESC = cancel
+          </span>
+        </div>
+      )}
+      {activeTool === "line" && lineTool.startPoint && (
+        <div className="offset-input-overlay">
+          <span>Length:</span>
+          <input
+            ref={lineLengthInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={lineTool.lengthValue}
+            onChange={(e) => lineTool.setLengthValue(e.target.value)}
+          />
+          <span className="offset-input-hint">
+            Masukkan panjang lalu klik titik akhir
+          </span>
+        </div>
+      )}
+      {activeTool === "rectangle" && rectangleTool.startPoint && (
+        <div className="offset-input-overlay">
+          <span>W:</span>
+          <input
+            ref={rectWidthInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={rectangleTool.widthValue}
+            onChange={(e) => rectangleTool.setWidthValue(e.target.value)}
+          />
+          <span>H:</span>
+          <input
+            ref={rectHeightInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={rectangleTool.heightValue}
+            onChange={(e) => rectangleTool.setHeightValue(e.target.value)}
+          />
+          <span className="offset-input-hint">
+            Masukkan lebar/tinggi lalu klik titik akhir
+          </span>
+        </div>
+      )}
+      {activeTool === "circle" && circleTool.center && (
+        <div className="offset-input-overlay">
+          <span>R:</span>
+          <input
+            ref={circleRadiusInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={circleTool.radiusValue}
+            onChange={(e) => circleTool.setRadiusValue(e.target.value)}
+          />
+          <span className="offset-input-hint">
+            Masukkan radius lalu klik titik akhir
+          </span>
+        </div>
+      )}
+      {activeTool === "ellipse" && ellipseTool.center && (
+        <div className="offset-input-overlay">
+          <span>Rx:</span>
+          <input
+            ref={ellipseRxInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={ellipseTool.rxValue}
+            onChange={(e) => ellipseTool.setRxValue(e.target.value)}
+          />
+          <span>Ry:</span>
+          <input
+            ref={ellipseRyInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={ellipseTool.ryValue}
+            onChange={(e) => ellipseTool.setRyValue(e.target.value)}
+          />
+          <span className="offset-input-hint">
+            Masukkan Rx/Ry lalu klik titik akhir
+          </span>
+        </div>
+      )}
+      {activeTool === "polyline" && polylineTool.points.length > 0 && (
+        <div className="offset-input-overlay">
+          <span>Length:</span>
+          <input
+            ref={polylineLengthInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={polylineTool.lengthValue}
+            onChange={(e) => polylineTool.setLengthValue(e.target.value)}
+          />
+          <span className="offset-input-hint">
+            Masukkan panjang segmen lalu klik titik akhir
           </span>
         </div>
       )}

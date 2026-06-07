@@ -16,6 +16,12 @@ export function useCircleTool() {
   const { addEntity, activeLayerId, layers } = useCADStore();
   const [center, setCenter] = useState<{ x: number; y: number } | null>(null);
   const [preview, setPreview] = useState<PreviewCircle | null>(null);
+  const [cursorPoint, setCursorPoint] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [radiusValue, setRadiusValue] = useState<string>("");
+  const [targetRadius, setTargetRadius] = useState<number | null>(null);
 
   const activeLayer = layers.find((l) => l.id === activeLayerId);
   const layerColor = activeLayer?.color ?? "#ffffff";
@@ -23,17 +29,26 @@ export function useCircleTool() {
   const getRadius = (cx: number, cy: number, px: number, py: number) =>
     Math.sqrt((px - cx) ** 2 + (py - cy) ** 2);
 
+  const buildPreview = useCallback(
+    (pt: { x: number; y: number }) => {
+      if (!center) return null;
+      const radius =
+        targetRadius != null
+          ? targetRadius
+          : getRadius(center.x, center.y, pt.x, pt.y);
+      return { cx: center.x, cy: center.y, radius };
+    },
+    [center, targetRadius],
+  );
+
   const onMouseMove = useCallback(
     (snapPoint: SnapPoint | null, worldX: number, worldY: number) => {
       if (!center) return;
       const pt = snapPoint ?? { x: worldX, y: worldY };
-      setPreview({
-        cx: center.x,
-        cy: center.y,
-        radius: getRadius(center.x, center.y, pt.x, pt.y),
-      });
+      setCursorPoint(pt);
+      setPreview(buildPreview(pt));
     },
-    [center],
+    [center, buildPreview],
   );
 
   const onMouseClick = useCallback(
@@ -44,8 +59,11 @@ export function useCircleTool() {
         setCenter(point);
         setPreview(null);
       } else {
-        const radius = getRadius(center.x, center.y, point.x, point.y);
-        if (radius < 0.001) return; // ignore zero radius
+        const radius =
+          targetRadius != null
+            ? targetRadius
+            : getRadius(center.x, center.y, point.x, point.y);
+        if (radius < 0.001) return;
 
         const entity: CircleEntity = {
           id: genId(),
@@ -59,16 +77,44 @@ export function useCircleTool() {
         addEntity(entity);
         setCenter(null);
         setPreview(null);
-        useCADStore.getState().setActiveTool('select');
+        setCursorPoint(null);
+        setRadiusValue("");
+        setTargetRadius(null);
+        useCADStore.getState().setActiveTool("select");
       }
     },
-    [center, activeLayerId, layerColor, addEntity],
+    [center, activeLayerId, layerColor, addEntity, targetRadius],
+  );
+
+  const onRadiusChange = useCallback(
+    (value: string) => {
+      setRadiusValue(value);
+      const parsed = Number(value);
+      const nextRadius = !Number.isNaN(parsed) && parsed > 0 ? parsed : null;
+      setTargetRadius(nextRadius);
+      if (center && cursorPoint) {
+        setPreview(buildPreview(cursorPoint));
+      }
+    },
+    [center, cursorPoint, buildPreview],
   );
 
   const cancel = useCallback(() => {
     setCenter(null);
     setPreview(null);
+    setCursorPoint(null);
+    setRadiusValue("");
+    setTargetRadius(null);
   }, []);
 
-  return { center, preview, onMouseMove, onMouseClick, cancel };
+  return {
+    center,
+    preview,
+    radiusValue,
+    setRadiusValue: onRadiusChange,
+    targetRadius,
+    onMouseMove,
+    onMouseClick,
+    cancel,
+  };
 }
