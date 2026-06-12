@@ -54,6 +54,10 @@ export function usePolylineTool() {
           ? computeSegmentEndpoint(points[points.length - 1], pt, targetLength)
           : pt;
       setPoints((prev) => [...prev, nextPoint]);
+      if (points.length > 0 && targetLength != null) {
+        setLengthValue("");
+        setTargetLength(null);
+      }
     },
     [points, targetLength],
   );

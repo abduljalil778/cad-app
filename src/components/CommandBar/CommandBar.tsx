@@ -93,6 +93,9 @@ export default function CommandBar() {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [commandLog]);
 
+  // Only show last 3 command log entries in the compact command bar
+  const visibleLog = commandLog.slice(-3);
+
   const handleInput = (val: string) => {
     setInput(val);
     setHistoryIndex(-1);
@@ -285,8 +288,11 @@ export default function CommandBar() {
   return (
     <div className="command-bar">
       <div className="command-log" ref={logRef}>
-        {commandLog.map((msg, i) => (
-          <div key={i} className="log-line">
+        {visibleLog.map((msg, i) => (
+          <div
+            key={`${commandLog.length - visibleLog.length + i}-${i}`}
+            className="log-line"
+          >
             {msg}
           </div>
         ))}
@@ -309,7 +315,10 @@ export default function CommandBar() {
               }
               if (e.key === "ArrowUp") {
                 e.preventDefault();
-                const nextIdx = Math.min(historyIndex + 1, cmdHistory.length - 1);
+                const nextIdx = Math.min(
+                  historyIndex + 1,
+                  cmdHistory.length - 1,
+                );
                 if (nextIdx >= 0 && cmdHistory[nextIdx]) {
                   setHistoryIndex(nextIdx);
                   setInput(cmdHistory[nextIdx]);

@@ -109,6 +109,7 @@ export default function CADCanvas() {
   const rectWidthInputRef = useRef<HTMLInputElement>(null);
   const rectHeightInputRef = useRef<HTMLInputElement>(null);
   const circleRadiusInputRef = useRef<HTMLInputElement>(null);
+  const arcRadiusInputRef = useRef<HTMLInputElement>(null);
   const ellipseRxInputRef = useRef<HTMLInputElement>(null);
   const ellipseRyInputRef = useRef<HTMLInputElement>(null);
   const polylineLengthInputRef = useRef<HTMLInputElement>(null);
@@ -166,6 +167,11 @@ export default function CADCanvas() {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (activeTool === "polyline" && polylineTool.points.length >= 2) {
+          e.preventDefault();
+          polylineTool.finish();
+          return;
+        }
         lineTool.cancel();
         rectangleTool.cancel();
         circleTool.cancel();
@@ -220,13 +226,12 @@ export default function CADCanvas() {
           }
         }
       }
-      if (e.key === "Backspace" && activeTool === "polyline") {
-        e.preventDefault();
-        polylineTool.undoLastPoint();
-        return;
-      }
       if (activeTool === "polyline") {
-        if (e.key === "Enter") polylineTool.finish();
+        if (e.key === "Enter") {
+          e.preventDefault();
+          polylineTool.finish();
+          return;
+        }
         if (e.key === "c" || e.key === "C") polylineTool.close();
       }
       if (activeTool === "offset" && e.key === "Enter") {
@@ -323,6 +328,10 @@ export default function CADCanvas() {
     }
     if (activeTool === "circle" && circleTool.center) {
       setTimeout(() => circleRadiusInputRef.current?.focus(), 50);
+      return;
+    }
+    if (activeTool === "arc" && arcTool.step === "end" && arcTool.p2) {
+      setTimeout(() => arcRadiusInputRef.current?.focus(), 50);
       return;
     }
     if (activeTool === "ellipse" && ellipseTool.center) {
@@ -989,7 +998,7 @@ export default function CADCanvas() {
     }
 
     if (activeTool === "polyline" && polylineTool.points.length > 0)
-      return "Enter = finish  |  C = close  |  Backspace = undo  |  ESC = cancel";
+      return "Enter = finish  |  C = close  |  ESC = finish";
 
     if (activeTool === "text") {
       return textTool.insertPoint
@@ -2080,6 +2089,23 @@ export default function CADCanvas() {
             step="0.1"
             value={circleTool.radiusValue}
             onChange={(e) => circleTool.setRadiusValue(e.target.value)}
+          />
+          <span className="offset-input-hint">
+            Masukkan radius lalu klik titik akhir
+          </span>
+        </div>
+      )}
+      {activeTool === "arc" && arcTool.step === "end" && arcTool.p2 && (
+        <div className="offset-input-overlay">
+          <span>R:</span>
+          <input
+            ref={arcRadiusInputRef}
+            className="offset-input"
+            type="number"
+            min="0"
+            step="0.1"
+            value={arcTool.radiusValue}
+            onChange={(e) => arcTool.setRadiusValue(e.target.value)}
           />
           <span className="offset-input-hint">
             Masukkan radius lalu klik titik akhir
