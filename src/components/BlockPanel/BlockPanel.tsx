@@ -13,6 +13,7 @@ export default function BlockPanel() {
   const handleDragStart = useCallback(
     (e: React.DragEvent, defId: string) => {
       dragData.current = defId;
+      e.dataTransfer.setData('application/cad-block', defId);
       e.dataTransfer.setData('text/plain', defId);
       e.dataTransfer.effectAllowed = 'copy';
     },

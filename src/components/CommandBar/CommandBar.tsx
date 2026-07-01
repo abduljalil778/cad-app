@@ -263,14 +263,67 @@ export default function CommandBar() {
             minY = Math.min(minY, d.y1, d.y2);
             maxY = Math.max(maxY, d.y1, d.y2);
           }
+          if (e.type === "block_ref") {
+            const br = e as any;
+            // Use insertion point as minimum bounds
+            minX = Math.min(minX, br.insertX);
+            maxX = Math.max(maxX, br.insertX);
+            minY = Math.min(minY, br.insertY);
+            maxY = Math.max(maxY, br.insertY);
+            // Try to use block definition for better bounds
+            const { blockDefinitions } = useCADStore.getState();
+            const bDef = blockDefinitions.find((d: any) => d.id === br.blockDefId);
+            if (bDef) {
+              for (const be of bDef.entities) {
+                if (be.type === "line") {
+                  const bl = be as any;
+                  const pts = [
+                    { x: bl.x1 - bDef.basePoint.x, y: bl.y1 - bDef.basePoint.y },
+                    { x: bl.x2 - bDef.basePoint.x, y: bl.y2 - bDef.basePoint.y },
+                  ];
+                  for (const p of pts) {
+                    minX = Math.min(minX, br.insertX + p.x * (br.scaleX ?? 1));
+                    maxX = Math.max(maxX, br.insertX + p.x * (br.scaleX ?? 1));
+                    minY = Math.min(minY, br.insertY + p.y * (br.scaleX ?? 1));
+                    maxY = Math.max(maxY, br.insertY + p.y * (br.scaleX ?? 1));
+                  }
+                } else if (be.type === "circle") {
+                  const bc = be as any;
+                  const cx = br.insertX + (bc.cx - bDef.basePoint.x) * (br.scaleX ?? 1);
+                  const cy = br.insertY + (bc.cy - bDef.basePoint.y) * (br.scaleX ?? 1);
+                  const r = bc.radius * Math.abs(br.scaleX ?? 1);
+                  minX = Math.min(minX, cx - r);
+                  maxX = Math.max(maxX, cx + r);
+                  minY = Math.min(minY, cy - r);
+                  maxY = Math.max(maxY, cy + r);
+                } else if (be.type === "rectangle") {
+                  const br2 = be as any;
+                  const rx = br.insertX + (br2.x - bDef.basePoint.x) * (br.scaleX ?? 1);
+                  const ry = br.insertY + (br2.y - bDef.basePoint.y) * (br.scaleX ?? 1);
+                  minX = Math.min(minX, rx, rx + br2.width * (br.scaleX ?? 1));
+                  maxX = Math.max(maxX, rx, rx + br2.width * (br.scaleX ?? 1));
+                  minY = Math.min(minY, ry, ry + br2.height * (br.scaleX ?? 1));
+                  maxY = Math.max(maxY, ry, ry + br2.height * (br.scaleX ?? 1));
+                }
+              }
+            }
+          }
+        }
+        // Guard against invalid bounds (e.g., all entities have NaN coords)
+        if (!isFinite(minX) || !isFinite(maxX) || !isFinite(minY) || !isFinite(maxY) ||
+            maxX - minX < 0.001 && maxY - minY < 0.001) {
+          pushLog("Cannot compute extents.");
+          break;
         }
         // Viewport size: window minus toolbar (64px) and layer panel (220px) width,
         // minus menubar (32px) and command bar (110px) height.
         const vw = window.innerWidth - 64 - 220;
         const vh = window.innerHeight - 32 - 110;
         const GRID_PIXEL = 50;
-        const zx = (vw * 0.85) / ((maxX - minX) * GRID_PIXEL);
-        const zy = (vh * 0.85) / ((maxY - minY) * GRID_PIXEL);
+        const rangeX = Math.max(maxX - minX, 0.1);
+        const rangeY = Math.max(maxY - minY, 0.1);
+        const zx = (vw * 0.85) / (rangeX * GRID_PIXEL);
+        const zy = (vh * 0.85) / (rangeY * GRID_PIXEL);
         const z = Math.min(zx, zy, 10);
         const cx = (minX + maxX) / 2;
         const cy = (minY + maxY) / 2;

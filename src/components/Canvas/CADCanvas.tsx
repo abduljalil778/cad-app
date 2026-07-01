@@ -604,34 +604,47 @@ export default function CADCanvas() {
     [activeTool, screenToWorld, getTextEntityAt, setSelectedIds, textTool],
   );
 
-  // ── Drag-and-drop (native DOM listeners to bypass Konva canvas) ──
-  useEffect(() => {
-    const el = containerRef.current;
-    if (!el) return;
+  // ── Drag-and-drop block insertion ──
+  // Use a ref to always have the latest screenToWorld without recreating listeners
+  const screenToWorldRef = useRef(screenToWorld);
+  screenToWorldRef.current = screenToWorld;
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    // Use capture phase (3rd arg = true) so we intercept BEFORE the Konva canvas
     const onDragOver = (e: DragEvent) => {
       e.preventDefault();
-      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
     };
 
     const onDrop = (e: DragEvent) => {
       e.preventDefault();
-      const defId = e.dataTransfer?.getData("text/plain");
+      e.stopPropagation();
+
+      const defId = e.dataTransfer?.getData('application/cad-block')
+                 || e.dataTransfer?.getData('text/plain');
       if (!defId) return;
-      const { blockDefinitions, activeLayerId, layers } =
-        useCADStore.getState();
-      const def = blockDefinitions.find((d) => d.id === defId);
+
+      const st = useCADStore.getState();
+      const def = st.blockDefinitions.find((d) => d.id === defId);
       if (!def) return;
 
-      const rect = el.getBoundingClientRect();
-      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const rect = container.getBoundingClientRect();
+      const world = screenToWorldRef.current(
+        e.clientX - rect.left,
+        e.clientY - rect.top,
+      );
 
-      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      if (!isFinite(world.x) || !isFinite(world.y)) return;
+
+      const activeLayer = st.layers.find((l) => l.id === st.activeLayerId);
       const ref: BlockReferenceEntity = {
         id: crypto.randomUUID(),
-        type: "block_ref",
-        layerId: activeLayerId,
-        color: activeLayer?.color ?? "#ffffff",
+        type: 'block_ref',
+        layerId: st.activeLayerId,
+        color: activeLayer?.color ?? '#ffffff',
         blockDefId: defId,
         insertX: world.x,
         insertY: world.y,
@@ -639,19 +652,19 @@ export default function CADCanvas() {
         scaleY: 1,
         rotation: 0,
       };
-      useCADStore.getState().addEntity(ref as any);
-      useCADStore
-        .getState()
-        .pushLog(`INSERT: Placed "${def.name}" via drag & drop.`);
+      st.addEntity(ref as any);
+      st.pushLog(`INSERT: Placed "${def.name}" via drag & drop.`);
     };
 
-    el.addEventListener("dragover", onDragOver);
-    el.addEventListener("drop", onDrop);
+    // Attach in capture phase to intercept before Konva canvas
+    container.addEventListener('dragover', onDragOver, true);
+    container.addEventListener('drop', onDrop, true);
+
     return () => {
-      el.removeEventListener("dragover", onDragOver);
-      el.removeEventListener("drop", onDrop);
+      container.removeEventListener('dragover', onDragOver, true);
+      container.removeEventListener('drop', onDrop, true);
     };
-  }, [screenToWorld]);
+  }, []); // No deps needed — screenToWorldRef always has latest
 
   const isPanning = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
