@@ -1,7 +1,7 @@
 import { useState, useCallback } from "react";
 import { useCADStore } from "../store/useCADStore";
 import { DimensionEntity } from "../engine/entities";
-import { SnapPoint } from "../engine/snap";
+import { SnapPoint, getNearestPointOnEntities } from "../engine/snap";
 
 let idCounter = 0;
 const genId = () => `dim_${Date.now()}_${idCounter++}`;
@@ -10,7 +10,7 @@ export type DimStep = "p1" | "p2" | "offset";
 export type DimMode = "linear" | "aligned";
 
 export function useDimensionTool(mode: DimMode = "linear") {
-  const { addEntity, activeLayerId } = useCADStore();
+  const { addEntity, activeLayerId, entities } = useCADStore();
   const [step, setStep] = useState<DimStep>("p1");
   const [p1, setP1] = useState<{ x: number; y: number } | null>(null);
   const [p2, setP2] = useState<{ x: number; y: number } | null>(null);
@@ -25,7 +25,10 @@ export function useDimensionTool(mode: DimMode = "linear") {
 
   const onMouseClick = useCallback(
     (snap: SnapPoint | null, wx: number, wy: number) => {
-      const pt = snap ?? { x: wx, y: wy };
+      // If no precise snap (endpoint, midpoint, etc.), allow picking
+      // the nearest point on any entity so the user can click anywhere.
+      const picked = snap ?? getNearestPointOnEntities(wx, wy, entities);
+      const pt = picked ?? { x: wx, y: wy };
 
       if (step === "p1") {
         setP1(pt);
@@ -51,7 +54,7 @@ export function useDimensionTool(mode: DimMode = "linear") {
         setP1(null);
         setP2(null);
         setStep("p1");
-        useCADStore.getState().setActiveTool('select');
+        useCADStore.getState().setActiveTool("select");
       }
     },
     [step, p1, p2, mode, activeLayerId, addEntity],

@@ -5,6 +5,7 @@ import {
   ArcEntity,
   RectangleEntity,
   PolylineEntity,
+  BlockReferenceEntity,
 } from "./entities";
 
 export interface SnapPoint {
@@ -331,6 +332,52 @@ function nearestPointOnRectangle(
 }
 
 /**
+ * Return the nearest point on any entity (no threshold) — useful for
+ * tools that want to pick anywhere on an entity even when not near a snap.
+ */
+export function getNearestPointOnEntities(
+  worldX: number,
+  worldY: number,
+  entities: CADEntity[],
+): SnapPoint | null {
+  let best: SnapPoint | null = null;
+  let bestD = Infinity;
+
+  for (const entity of entities) {
+    let nearPt: SnapPoint | null = null;
+    switch (entity.type) {
+      case "line":
+        nearPt = nearestPointOnLine(worldX, worldY, entity);
+        break;
+      case "circle":
+        nearPt = nearestPointOnCircle(worldX, worldY, entity);
+        break;
+      case "arc":
+        nearPt = nearestPointOnArc(worldX, worldY, entity);
+        break;
+      case "rectangle":
+        nearPt = nearestPointOnRectangle(worldX, worldY, entity);
+        break;
+      case "polyline":
+        nearPt = nearestPointOnPolyline(worldX, worldY, entity);
+        break;
+      default:
+        break;
+    }
+
+    if (nearPt) {
+      const d = dist(worldX, worldY, nearPt.x, nearPt.y);
+      if (d < bestD) {
+        bestD = d;
+        best = nearPt;
+      }
+    }
+  }
+
+  return best;
+}
+
+/**
  * Nearest point on a polyline.
  */
 function nearestPointOnPolyline(
@@ -428,6 +475,11 @@ export function findSnapPoint(
       case "polyline":
         candidates.push(...collectPolylineSnaps(entity));
         break;
+      case 'block_ref': {
+        const ref = entity as BlockReferenceEntity;
+        candidates.push({ x: ref.insertX, y: ref.insertY, type: 'center' });
+        break;
+      }
       // DimensionEntity tidak menghasilkan snap point
       default:
         break;

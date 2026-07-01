@@ -1,9 +1,8 @@
 .layer-panel {
-  width: 220px;
-  min-width: 220px;
+  flex: 1;
+  min-height: 0;
   height: 100%;
   background: #252526;
-  border-left: 1px solid #3e3e42;
   display: flex;
   flex-direction: column;
   overflow: hidden;

@@ -20,6 +20,10 @@ const COMMANDS: Record<
   POLYLINE: { tool: "polyline", desc: "POLYLINE — draw connected lines" },
   EL: { tool: "ellipse", desc: "ELLIPSE — draw ellipses" },
   ELLIPSE: { tool: "ellipse", desc: "ELLIPSE — draw ellipses" },
+  P: { tool: "pan", desc: "PAN — move view" },
+  PAN: { tool: "pan", desc: "PAN — move view" },
+  T: { tool: "text", desc: "TEXT — place text" },
+  TEXT: { tool: "text", desc: "TEXT — place text" },
   DIM: { tool: "dimension", desc: "DIMENSION — linear dimension" },
   DIMLINEAR: { tool: "dimension", desc: "DIMENSION — linear dimension" },
   OFFSET: { tool: "offset", desc: "OFFSET — offset entity by distance" },
@@ -62,6 +66,14 @@ const COMMANDS: Record<
   DEL: { action: "delete", desc: "Delete selected entities" },
   DELETE: { action: "delete", desc: "Delete selected entities" },
   ERASE: { action: "delete", desc: "Delete selected entities" },
+  B: { tool: "block", desc: "BLOCK — create block from selection" },
+  BLOCK: { tool: "block", desc: "BLOCK — create block from selection" },
+  I: { tool: "insert", desc: "INSERT — insert block reference" },
+  INSERT: { tool: "insert", desc: "INSERT — insert block reference" },
+  X: { action: "explode", desc: "EXPLODE — explode block to entities" },
+  EXPLODE: { action: "explode", desc: "EXPLODE — explode block to entities" },
+  BEDIT: { action: "bedit", desc: "BEDIT — edit selected block definition" },
+  BCLOSE: { action: "bclose", desc: "BCLOSE — close block editor (save)" },
 };
 
 export default function CommandBar() {
@@ -270,6 +282,45 @@ export default function CommandBar() {
         pushLog(`Zoom extents — showing ${entities.length} entities`);
         break;
       }
+      case "explode": {
+        const st = useCADStore.getState();
+        const blockRefs = st.selectedIds.filter(id => {
+          const e = st.entities.find(ent => ent.id === id);
+          return e && e.type === 'block_ref';
+        });
+        if (blockRefs.length === 0) {
+          pushLog('EXPLODE: Select a block reference first.');
+        } else {
+          for (const refId of blockRefs) {
+            useCADStore.getState().explodeBlockRef(refId);
+          }
+          pushLog(`EXPLODE: Exploded ${blockRefs.length} block reference(s).`);
+        }
+        break;
+      }
+      case "bedit": {
+        const st2 = useCADStore.getState();
+        const ref = st2.entities.find(
+          e => st2.selectedIds.includes(e.id) && e.type === 'block_ref'
+        );
+        if (!ref) {
+          pushLog('BEDIT: Select a block reference first.');
+        } else {
+          useCADStore.getState().enterBlockEditor((ref as any).blockDefId);
+          pushLog('BEDIT: Entered block editor. Use BCLOSE to save and exit.');
+        }
+        break;
+      }
+      case "bclose": {
+        const st3 = useCADStore.getState();
+        if (!st3.blockEditorDefId) {
+          pushLog('BCLOSE: Not in block editor.');
+        } else {
+          useCADStore.getState().exitBlockEditor(true);
+          pushLog('BCLOSE: Saved and closed block editor.');
+        }
+        break;
+      }
     }
   };
 
@@ -307,7 +358,10 @@ export default function CommandBar() {
             placeholder="type L, REC, C, SNAP, GRID, UNDO… or ? for help"
             onChange={(e) => handleInput(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") execute(input);
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                execute(input);
+              }
               if (e.key === "Escape") {
                 setInput("");
                 setSuggestion("");

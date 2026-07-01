@@ -8,6 +8,7 @@ import {
   DimensionEntity,
   TextEntity,
   EllipseEntity,
+  BlockReferenceEntity,
 } from "./entities";
 
 type Point = { x: number; y: number };
@@ -84,6 +85,10 @@ export function translateEntity(entity: CADEntity, dx: number, dy: number): CADE
       const e = entity as EllipseEntity;
       return { ...e, cx: e.cx + dx, cy: e.cy + dy };
     }
+    case "block_ref": {
+      const e = entity as BlockReferenceEntity;
+      return { ...e, insertX: e.insertX + dx, insertY: e.insertY + dy };
+    }
     default:
       return entity;
   }
@@ -153,6 +158,11 @@ export function rotateEntity(entity: CADEntity, center: Point, angle: number): C
       const e = entity as EllipseEntity;
       const c = rotatePoint({ x: e.cx, y: e.cy }, center, angle);
       return { ...e, cx: c.x, cy: c.y, rotation: e.rotation + angle };
+    }
+    case "block_ref": {
+      const e = entity as BlockReferenceEntity;
+      const p = rotatePoint({ x: e.insertX, y: e.insertY }, center, angle);
+      return { ...e, insertX: p.x, insertY: p.y, rotation: e.rotation + angle };
     }
     default:
       return entity;
@@ -225,6 +235,18 @@ export function mirrorEntity(entity: CADEntity, lineP1: Point, lineP2: Point): C
       const c = mirrorPoint({ x: e.cx, y: e.cy }, lineP1, lineP2);
       return { ...e, cx: c.x, cy: c.y, rotation: 2 * mirrorAngle - e.rotation };
     }
+    case "block_ref": {
+      const e = entity as BlockReferenceEntity;
+      const p = mirrorPoint({ x: e.insertX, y: e.insertY }, lineP1, lineP2);
+      return {
+        ...e,
+        insertX: p.x,
+        insertY: p.y,
+        scaleX: e.scaleX,
+        scaleY: -e.scaleY,
+        rotation: 2 * mirrorAngle - e.rotation,
+      };
+    }
     default:
       return entity;
   }
@@ -273,6 +295,17 @@ export function scaleEntity(entity: CADEntity, center: Point, factor: number): C
       const e = entity as EllipseEntity;
       const c = scalePoint({ x: e.cx, y: e.cy }, center, factor);
       return { ...e, cx: c.x, cy: c.y, rx: e.rx * Math.abs(factor), ry: e.ry * Math.abs(factor) };
+    }
+    case "block_ref": {
+      const e = entity as BlockReferenceEntity;
+      const p = scalePoint({ x: e.insertX, y: e.insertY }, center, factor);
+      return {
+        ...e,
+        insertX: p.x,
+        insertY: p.y,
+        scaleX: e.scaleX * factor,
+        scaleY: e.scaleY * factor,
+      };
     }
     default:
       return entity;

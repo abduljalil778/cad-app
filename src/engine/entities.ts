@@ -6,7 +6,8 @@ export type EntityType =
   | "polyline"
   | "text"
   | "dimension"
-  | "ellipse";
+  | "ellipse"
+  | "block_ref";
 
 export interface BaseEntity {
   id: string;
@@ -96,6 +97,16 @@ export interface EllipseEntity extends BaseEntity {
   rotation: number; // radians
 }
 
+export interface BlockReferenceEntity extends BaseEntity {
+  type: "block_ref";
+  blockDefId: string;
+  insertX: number;
+  insertY: number;
+  scaleX: number;
+  scaleY: number;
+  rotation: number;
+}
+
 export type CADEntity =
   | LineEntity
   | RectangleEntity
@@ -104,4 +115,17 @@ export type CADEntity =
   | ArcEntity
   | DimensionEntity
   | TextEntity
-  | EllipseEntity;
+  | EllipseEntity
+  | BlockReferenceEntity;
+
+/**
+ * A block definition is NOT an entity — it's a named collection of entities
+ * stored in the store. Block references point to a definition by ID.
+ */
+export interface BlockDefinition {
+  id: string;
+  name: string;
+  basePoint: { x: number; y: number };
+  entities: CADEntity[];
+  createdAt: number;
+}

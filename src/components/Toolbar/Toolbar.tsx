@@ -23,6 +23,9 @@ const tools: { id: ActiveTool; label: string; icon: string; group: string; short
   { id: "measure_dist", label: "Dist", icon: "📏", group: "measure", shortcut: "DIST" },
   { id: "measure_angle", label: "Angle", icon: "∠", group: "measure", shortcut: "ANG" },
   { id: "measure_area", label: "Area", icon: "⬡", group: "measure", shortcut: "AREA" },
+  { id: "block", label: "Block", icon: "▣", group: "block", shortcut: "B" },
+  { id: "insert", label: "Insert", icon: "⊞", group: "block", shortcut: "I" },
+  { id: "explode", label: "Explode", icon: "💥", group: "block", shortcut: "X" },
 ];
 
 
@@ -35,7 +38,7 @@ export default function Toolbar() {
     return acc;
   }, {});
 
-  const groupOrder = ["select", "draw", "annotate", "modify", "measure"];
+  const groupOrder = ["select", "draw", "annotate", "modify", "measure", "block"];
 
   return (
     <div className="toolbar">

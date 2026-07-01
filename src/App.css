@@ -49,3 +49,12 @@ body,
   height: 100%;
   overflow: hidden;
 }
+
+.right-panels {
+  display: flex;
+  flex-direction: column;
+  width: 220px;
+  min-width: 220px;
+  height: 100%;
+  border-left: 1px solid #3e3e42;
+}

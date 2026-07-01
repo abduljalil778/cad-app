@@ -89,12 +89,12 @@ function findNearestEntity(
 }
 
 export function useTrimTool() {
-  const { entities, setEntities, pushLog } = useCADStore();
+  const { entities, setEntities, pushLog, zoom } = useCADStore();
 
   const onMouseClick = useCallback(
     (_snap: SnapPoint | null, wx: number, wy: number) => {
-      // Find nearest entity to click point
-      const threshold = 0.2;
+      // Find nearest entity to click point (zoom-aware threshold)
+      const threshold = 0.3 / (zoom * 0.5 + 0.5);
       const clickPt = { x: wx, y: wy };
 
       // Find hit entity
@@ -111,10 +111,92 @@ export function useTrimTool() {
         return;
       }
 
-      // Sort by t parameter
-      intersections.sort((a, b) => a.t - b.t);
+      // For line entities: compute click parameter t, find bounding intersections,
+      // and only remove the segment between them (keeping rest intact).
+      if (hit.entity.type === 'line') {
+        const line = hit.entity as LineEntity;
+        const p1 = { x: line.x1, y: line.y1 };
+        const p2 = { x: line.x2, y: line.y2 };
+        const dx = p2.x - p1.x, dy = p2.y - p1.y;
+        const len2 = dx * dx + dy * dy;
+        if (len2 === 0) return;
 
-      // Split entity at intersection points
+        // Parameter of click point on the line
+        const clickT = ((clickPt.x - p1.x) * dx + (clickPt.y - p1.y) * dy) / len2;
+
+        // Get sorted t values of all intersections (clamped to valid range)
+        const tValues = intersections
+          .map(i => {
+            return ((i.point.x - p1.x) * dx + (i.point.y - p1.y) * dy) / len2;
+          })
+          .filter(t => t > 1e-6 && t < 1 - 1e-6)
+          .sort((a, b) => a - b);
+
+        // Deduplicate close t values
+        const uniqueT: number[] = [];
+        for (const t of tValues) {
+          if (uniqueT.length === 0 || t - uniqueT[uniqueT.length - 1] > 1e-4) {
+            uniqueT.push(t);
+          }
+        }
+
+        if (uniqueT.length === 0) {
+          pushLog('TRIM: No valid intersection points on this entity.');
+          return;
+        }
+
+        // Find bounding t values around clickT
+        // tLow = largest t < clickT (or 0 if none)
+        // tHigh = smallest t > clickT (or 1 if none)
+        let tLow = 0;
+        let tHigh = 1;
+        for (const t of uniqueT) {
+          if (t < clickT && t > tLow) tLow = t;
+          if (t > clickT && t < tHigh) tHigh = t;
+        }
+
+        // Build remaining pieces (at most 2 intact lines)
+        const remaining: CADEntity[] = [];
+
+        // Left piece: from line start to tLow (if tLow > 0)
+        if (tLow > 1e-6) {
+          remaining.push({
+            id: `${line.id}_trim_L`,
+            type: 'line',
+            layerId: line.layerId,
+            color: line.color,
+            lineWidth: line.lineWidth,
+            x1: p1.x,
+            y1: p1.y,
+            x2: p1.x + tLow * dx,
+            y2: p1.y + tLow * dy,
+          } as LineEntity);
+        }
+
+        // Right piece: from tHigh to line end (if tHigh < 1)
+        if (tHigh < 1 - 1e-6) {
+          remaining.push({
+            id: `${line.id}_trim_R`,
+            type: 'line',
+            layerId: line.layerId,
+            color: line.color,
+            lineWidth: line.lineWidth,
+            x1: p1.x + tHigh * dx,
+            y1: p1.y + tHigh * dy,
+            x2: p2.x,
+            y2: p2.y,
+          } as LineEntity);
+        }
+
+        // Replace original with remaining pieces
+        const newEntities = entities.filter(e => e.id !== hit.entity.id);
+        newEntities.push(...remaining);
+        setEntities(newEntities);
+        pushLog(`TRIM: Removed segment from line. Click another entity or ESC.`);
+        return;
+      }
+
+      // For non-line entities: fallback to old split-all behavior
       const splitPoints = intersections.map(i => i.point);
       const segments = splitEntityAtPoints(hit.entity, splitPoints);
 
@@ -123,7 +205,6 @@ export function useTrimTool() {
         return;
       }
 
-      // Find which segment was clicked (closest to click point)
       let clickedSegIdx = 0;
       let minDist = Infinity;
       segments.forEach((seg, idx) => {
@@ -134,18 +215,13 @@ export function useTrimTool() {
         }
       });
 
-      // Remove the clicked segment, keep others
       const remaining = segments.filter((_, i) => i !== clickedSegIdx);
-
-      // Update entities: remove original, add remaining segments
       const newEntities = entities.filter(e => e.id !== hit.entity.id);
       newEntities.push(...remaining);
       setEntities(newEntities);
-
-      pushLog(`TRIM: Removed segment from ${hit.entity.type}.`);
-      useCADStore.getState().setActiveTool('select');
+      pushLog(`TRIM: Removed segment from ${hit.entity.type}. Click another entity or ESC.`);
     },
-    [entities, setEntities, pushLog],
+    [entities, setEntities, pushLog, zoom],
   );
 
   const cancel = useCallback(() => {

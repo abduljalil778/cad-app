@@ -8,6 +8,7 @@ import {
   Path,
   Text,
   Ellipse,
+  Group,
 } from "react-konva";
 import { useCADStore } from "../../store/useCADStore";
 import { findSnapPoint, SnapPoint } from "../../engine/snap";
@@ -23,7 +24,10 @@ import { useTrimTool } from "../../tools/useTrimTool";
 import { useExtendTool } from "../../tools/useExtendTool";
 import { useFilletTool } from "../../tools/useFilletTool";
 import { useMeasureTool } from "../../tools/useMeasureTool";
+import { useBlockTool } from "../../tools/useBlockTool";
+import { useInsertTool } from "../../tools/useInsertTool";
 import {
+  CADEntity,
   LineEntity,
   RectangleEntity,
   CircleEntity,
@@ -31,14 +35,20 @@ import {
   ArcEntity,
   TextEntity,
   EllipseEntity,
+  DimensionEntity,
+  BlockReferenceEntity,
+  BlockDefinition,
 } from "../../engine/entities";
+import {
+  getTransformedBlockEntities,
+  getBlockRefBounds,
+} from "../../engine/blockTransform";
 import { arcToPath } from "../../engine/arcPath";
 import "./CADCanvas.css";
 import { JSX } from "react/jsx-dev-runtime";
 import { useDimensionTool } from "../../tools/useDimensionTool";
 import { useOffsetTool } from "../../tools/useOffsetTool";
 import DimensionShape from "./DimensionShape";
-import { DimensionEntity } from "../../engine/entities";
 
 const GRID_PIXEL = 50;
 
@@ -76,6 +86,109 @@ function buildGrid(
   return lines;
 }
 
+/**
+ * Compute which entity IDs fall within a box selection region.
+ * @param start - Box start corner (world coords)
+ * @param end - Box end corner (world coords)
+ * @param entities - All entities
+ * @param layers - All layers (for visibility check)
+ * @param blockDefinitions - For block_ref bounds
+ */
+function getBoxSelectHits(
+  start: { x: number; y: number },
+  end: { x: number; y: number },
+  entities: CADEntity[],
+  layers: { id: string; visible: boolean }[],
+  blockDefinitions: BlockDefinition[],
+): string[] {
+  const minX = Math.min(start.x, end.x);
+  const maxX = Math.max(start.x, end.x);
+  const minY = Math.min(start.y, end.y);
+  const maxY = Math.max(start.y, end.y);
+  const isWindowSelect = end.x > start.x;
+
+  return entities
+    .filter((entity) => {
+      const entityLayer = layers.find((l) => l.id === entity.layerId);
+      if (entityLayer && !entityLayer.visible) return false;
+
+      let eMinX = Infinity,
+        eMinY = Infinity,
+        eMaxX = -Infinity,
+        eMaxY = -Infinity;
+
+      if (entity.type === "line") {
+        eMinX = Math.min(entity.x1, entity.x2);
+        eMaxX = Math.max(entity.x1, entity.x2);
+        eMinY = Math.min(entity.y1, entity.y2);
+        eMaxY = Math.max(entity.y1, entity.y2);
+      } else if (entity.type === "circle") {
+        eMinX = entity.cx - entity.radius;
+        eMaxX = entity.cx + entity.radius;
+        eMinY = entity.cy - entity.radius;
+        eMaxY = entity.cy + entity.radius;
+      } else if (entity.type === "rectangle") {
+        eMinX = entity.x;
+        eMaxX = entity.x + entity.width;
+        eMinY = entity.y;
+        eMaxY = entity.y + entity.height;
+      } else if (entity.type === "polyline") {
+        for (const p of entity.points) {
+          eMinX = Math.min(eMinX, p.x);
+          eMaxX = Math.max(eMaxX, p.x);
+          eMinY = Math.min(eMinY, p.y);
+          eMaxY = Math.max(eMaxY, p.y);
+        }
+      } else if (entity.type === "arc") {
+        eMinX = entity.cx - entity.radius;
+        eMaxX = entity.cx + entity.radius;
+        eMinY = entity.cy - entity.radius;
+        eMaxY = entity.cy + entity.radius;
+      } else if (entity.type === "ellipse") {
+        eMinX = entity.cx - entity.rx;
+        eMaxX = entity.cx + entity.rx;
+        eMinY = entity.cy - entity.ry;
+        eMaxY = entity.cy + entity.ry;
+      } else if (entity.type === "text") {
+        const t = entity as TextEntity;
+        const textWidth = t.text.length * t.fontSize * 0.6;
+        const textHeight =
+          t.fontSize * t.lineHeight * t.text.split("\n").length;
+        eMinX = t.x;
+        eMaxX = t.x + textWidth;
+        eMinY = t.y;
+        eMaxY = t.y + textHeight;
+      } else if (entity.type === "dimension") {
+        const dim = entity as DimensionEntity;
+        eMinX = Math.min(dim.x1, dim.x2);
+        eMaxX = Math.max(dim.x1, dim.x2);
+        eMinY = Math.min(dim.y1, dim.y2);
+        eMaxY = Math.max(dim.y1, dim.y2);
+      } else if (entity.type === "block_ref") {
+        const bRef = entity as BlockReferenceEntity;
+        const bDef = blockDefinitions.find((d) => d.id === bRef.blockDefId);
+        if (bDef) {
+          const bounds = getBlockRefBounds(bDef, bRef, blockDefinitions);
+          if (bounds) {
+            eMinX = bounds.minX;
+            eMaxX = bounds.maxX;
+            eMinY = bounds.minY;
+            eMaxY = bounds.maxY;
+          } else return false;
+        } else return false;
+      } else {
+        return false;
+      }
+
+      if (isWindowSelect) {
+        return eMinX >= minX && eMaxX <= maxX && eMinY >= minY && eMaxY <= maxY;
+      } else {
+        return !(eMaxX < minX || eMinX > maxX || eMaxY < minY || eMinY > maxY);
+      }
+    })
+    .map((e) => e.id);
+}
+
 export default function CADCanvas() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ width: 800, height: 600 });
@@ -87,6 +200,7 @@ export default function CADCanvas() {
   const [textInputActive, setTextInputActive] = useState(false);
   const [textInputValue, setTextInputValue] = useState("");
   const [textFontSize, setTextFontSize] = useState(0.3);
+  const [editingTextId, setEditingTextId] = useState<string | null>(null);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const [boxSelectStart, setBoxSelectStart] = useState<{
     x: number;
@@ -96,7 +210,9 @@ export default function CADCanvas() {
     x: number;
     y: number;
   } | null>(null);
+  const [boxPreviewIds, setBoxPreviewIds] = useState<string[]>([]);
   const isBoxSelecting = useRef(false);
+  const skipNextClick = useRef(false);
   const isDragging = useRef(false);
   const dragStartWorld = useRef<{ x: number; y: number } | null>(null);
   const [scaleInputActive, setScaleInputActive] = useState(false);
@@ -135,6 +251,8 @@ export default function CADCanvas() {
     orthoMode,
     toggleOrtho,
     moveEntities,
+    updateEntity,
+    pushLog,
   } = useCADStore();
 
   const lineTool = useLineTool();
@@ -151,6 +269,19 @@ export default function CADCanvas() {
   const extendTool = useExtendTool();
   const filletTool = useFilletTool();
   const measureTool = useMeasureTool();
+  const blockTool = useBlockTool();
+  const insertTool = useInsertTool();
+
+  // Block-related state
+  const [blockNameInputActive, setBlockNameInputActive] = useState(false);
+  const [blockNameInputValue, setBlockNameInputValue] = useState("");
+  const blockNameInputRef = useRef<HTMLInputElement>(null);
+  const [blockPickerActive, setBlockPickerActive] = useState(false);
+
+  // Block state from store
+  const blockDefinitions = useCADStore((s) => s.blockDefinitions);
+  const blockEditorDefId = useCADStore((s) => s.blockEditorDefId);
+  const exitBlockEditor = useCADStore((s) => s.exitBlockEditor);
 
   // ── Resize observer ───────────────────────────────────────────
   useEffect(() => {
@@ -198,11 +329,25 @@ export default function CADCanvas() {
           setFilletInputActive(false);
           setFilletInputValue("");
         }
+        if (blockNameInputActive) {
+          setBlockNameInputActive(false);
+          setBlockNameInputValue("");
+        }
+        if (blockPickerActive) {
+          setBlockPickerActive(false);
+        }
+        blockTool.cancel();
+        insertTool.cancel();
+        // Block editor escape = close without save
+        if (useCADStore.getState().blockEditorDefId) {
+          useCADStore.getState().exitBlockEditor(false);
+          pushLog("BEDIT: Discarded changes and closed block editor.");
+        }
         useCADStore.getState().setActiveTool("select");
       }
-      // Modify tool: Enter confirms selection or finishes copy
+      // Modify tool: Enter/Space confirms selection or finishes copy
       if (["move", "copy", "rotate", "mirror", "scale"].includes(activeTool)) {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           if (modifyTool.step === "scaleInput") {
             // Open scale input overlay
@@ -227,30 +372,33 @@ export default function CADCanvas() {
         }
       }
       if (activeTool === "polyline") {
-        if (e.key === "Enter") {
+        if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           polylineTool.finish();
           return;
         }
         if (e.key === "c" || e.key === "C") polylineTool.close();
       }
-      if (activeTool === "offset" && e.key === "Enter") {
+      if (activeTool === "offset" && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         setOffsetInputValue(String(offsetTool.distance));
         setOffsetInputActive(true);
         setTimeout(() => offsetInputRef.current?.focus(), 50);
       }
-      if (activeTool === "line" && e.key === "Enter") {
+      if (activeTool === "line" && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         lineTool.finish();
         return;
       }
-      if (activeTool === "measure_area" && e.key === "Enter") {
+      if (
+        activeTool === "measure_area" &&
+        (e.key === "Enter" || e.key === " ")
+      ) {
         e.preventDefault();
         measureTool.finishArea();
         return;
       }
-      if (activeTool === "fillet" && e.key === "Enter") {
+      if (activeTool === "fillet" && (e.key === "Enter" || e.key === " ")) {
         e.preventDefault();
         setFilletInputActive(true);
         setFilletInputValue(String(filletTool.radius));
@@ -309,13 +457,43 @@ export default function CADCanvas() {
     filletTool,
     measureTool,
     filletInputActive,
+    blockTool,
+    insertTool,
+    blockNameInputActive,
+    blockPickerActive,
+    blockEditorDefId,
+    exitBlockEditor,
   ]);
 
   useEffect(() => {
     setOffsetInputActive(false);
     setScaleInputActive(false);
     setFilletInputActive(false);
+    setBlockNameInputActive(false);
+    setBlockPickerActive(false);
+    if (activeTool === "block") {
+      blockTool.start();
+    }
+    if (activeTool === "insert") {
+      insertTool.start();
+    }
   }, [activeTool]);
+
+  useEffect(() => {
+    if (blockTool.nameInputActive) {
+      setBlockNameInputActive(true);
+      setBlockNameInputValue("");
+      setTimeout(() => blockNameInputRef.current?.focus(), 50);
+    }
+  }, [blockTool.nameInputActive]);
+
+  useEffect(() => {
+    if (insertTool.pickerActive) {
+      setBlockPickerActive(true);
+    } else {
+      setBlockPickerActive(false);
+    }
+  }, [insertTool.pickerActive]);
 
   useEffect(() => {
     if (activeTool === "line" && lineTool.startPoint) {
@@ -360,28 +538,138 @@ export default function CADCanvas() {
     [panOffset, zoom],
   );
 
-  // ── Mouse handlers ────────────────────────────────────────────
+  const getTextEntityAt = useCallback(
+    (wx: number, wy: number) => {
+      const threshold = 0.15 / (zoom * 0.5 + 0.5);
+      for (const entity of [...entities].reverse()) {
+        if (entity.type !== "text") continue;
+        const t = entity as TextEntity;
+        const textWidth = t.text.length * t.fontSize * 0.6;
+        const textHeight =
+          t.fontSize * t.lineHeight * t.text.split("\n").length;
+        if (
+          wx >= t.x - threshold &&
+          wx <= t.x + textWidth + threshold &&
+          wy >= t.y - threshold &&
+          wy <= t.y + textHeight + threshold
+        ) {
+          return t;
+        }
+      }
+      return null;
+    },
+    [entities, zoom],
+  );
+
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
       e.preventDefault();
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const worldBefore = screenToWorld(mx, my);
       const factor = 1.1;
-      setZoom(
+      const nextZoom =
         e.deltaY < 0
           ? Math.min(zoom * factor, 50)
-          : Math.max(zoom / factor, 0.05),
-      );
+          : Math.max(zoom / factor, 0.05);
+      setZoom(nextZoom);
+      setPanOffset({
+        x: mx - worldBefore.x * nextZoom * GRID_PIXEL,
+        y: my - worldBefore.y * nextZoom * GRID_PIXEL,
+      });
     },
-    [zoom, setZoom],
+    [screenToWorld, zoom, setZoom, setPanOffset],
   );
+
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (activeTool !== "select" && activeTool !== "text") return;
+      const rect = containerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+      const textEntity = getTextEntityAt(world.x, world.y);
+      if (!textEntity) return;
+
+      setSelectedIds([textEntity.id]);
+      setEditingTextId(textEntity.id);
+      setTextInputValue(textEntity.text);
+      setTextFontSize(textEntity.fontSize);
+      setTextInputActive(true);
+      if (textTool.insertPoint) textTool.cancel();
+      useCADStore.getState().setActiveTool("select");
+      setTimeout(() => textInputRef.current?.focus(), 50);
+    },
+    [activeTool, screenToWorld, getTextEntityAt, setSelectedIds, textTool],
+  );
+
+  // ── Drag-and-drop (native DOM listeners to bypass Konva canvas) ──
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+
+    const onDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    };
+
+    const onDrop = (e: DragEvent) => {
+      e.preventDefault();
+      const defId = e.dataTransfer?.getData("text/plain");
+      if (!defId) return;
+      const { blockDefinitions, activeLayerId, layers } =
+        useCADStore.getState();
+      const def = blockDefinitions.find((d) => d.id === defId);
+      if (!def) return;
+
+      const rect = el.getBoundingClientRect();
+      const world = screenToWorld(e.clientX - rect.left, e.clientY - rect.top);
+
+      const activeLayer = layers.find((l) => l.id === activeLayerId);
+      const ref: BlockReferenceEntity = {
+        id: crypto.randomUUID(),
+        type: "block_ref",
+        layerId: activeLayerId,
+        color: activeLayer?.color ?? "#ffffff",
+        blockDefId: defId,
+        insertX: world.x,
+        insertY: world.y,
+        scaleX: 1,
+        scaleY: 1,
+        rotation: 0,
+      };
+      useCADStore.getState().addEntity(ref as any);
+      useCADStore
+        .getState()
+        .pushLog(`INSERT: Placed "${def.name}" via drag & drop.`);
+    };
+
+    el.addEventListener("dragover", onDragOver);
+    el.addEventListener("drop", onDrop);
+    return () => {
+      el.removeEventListener("dragover", onDragOver);
+      el.removeEventListener("drop", onDrop);
+    };
+  }, [screenToWorld]);
 
   const isPanning = useRef(false);
   const lastPos = useRef({ x: 0, y: 0 });
 
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      if (activeTool === "pan" && e.button === 0) {
+        isPanning.current = true;
+        lastPos.current = { x: e.clientX, y: e.clientY };
+        if (containerRef.current)
+          containerRef.current.style.cursor = "grabbing";
+        return;
+      }
       if (e.button === 1) {
         isPanning.current = true;
         lastPos.current = { x: e.clientX, y: e.clientY };
+        if (containerRef.current)
+          containerRef.current.style.cursor = "grabbing";
       }
       if (
         e.button === 0 &&
@@ -500,13 +788,25 @@ export default function CADCanvas() {
       );
       setSnapPoint(snap);
 
-      // Box selection tracking
+      // Box selection tracking + live preview
       if (
         isBoxSelecting.current &&
         (activeTool === "select" ||
           (modifyTool.isActive && modifyTool.step === "selecting"))
       ) {
         setBoxSelectEnd(world);
+        // Compute live preview of which entities would be selected
+        if (boxSelectStart) {
+          const { blockDefinitions } = useCADStore.getState();
+          const previewIds = getBoxSelectHits(
+            boxSelectStart,
+            world,
+            entities,
+            layers,
+            blockDefinitions,
+          );
+          setBoxPreviewIds(previewIds);
+        }
       }
 
       if (activeTool === "line")
@@ -536,6 +836,9 @@ export default function CADCanvas() {
       if (modifyTool.isActive) {
         modifyTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
       }
+      if (activeTool === "insert") {
+        insertTool.onMouseMove(snap, orthoWorld.x, orthoWorld.y);
+      }
     },
     [
       isPanning,
@@ -558,12 +861,20 @@ export default function CADCanvas() {
       modifyTool,
       measureTool,
       filletTool,
+      insertTool,
     ],
   );
 
   const handleMouseUp = useCallback(
     (e: React.MouseEvent) => {
-      if (e.button === 1) isPanning.current = false;
+      if (e.button === 1 || activeTool === "pan") {
+        isPanning.current = false;
+        if (containerRef.current) containerRef.current.style.cursor = "";
+      }
+
+      if (activeTool === "pan") {
+        return;
+      }
 
       // Drag-to-move completion
       if (isDragging.current && dragStartWorld.current) {
@@ -594,93 +905,26 @@ export default function CADCanvas() {
           e.clientX - rect.left,
           e.clientY - rect.top,
         );
-        const start = boxSelectStart;
         const end = boxSelectEnd || world;
-        const minX = Math.min(start.x, end.x);
-        const maxX = Math.max(start.x, end.x);
-        const minY = Math.min(start.y, end.y);
-        const maxY = Math.max(start.y, end.y);
 
         // Only do box select if dragged more than a small threshold
         const dragDist = Math.sqrt(
-          (end.x - start.x) ** 2 + (end.y - start.y) ** 2,
+          (end.x - boxSelectStart.x) ** 2 + (end.y - boxSelectStart.y) ** 2,
         );
         if (dragDist > 0.05) {
-          const isWindowSelect = end.x > start.x; // left-to-right = window
-          const hits = entities.filter((entity) => {
-            // Check layer visibility
-            const entityLayer = layers.find((l) => l.id === entity.layerId);
-            if (entityLayer && !entityLayer.visible) return false;
-
-            // Get entity bounding box
-            let eMinX = Infinity,
-              eMinY = Infinity,
-              eMaxX = -Infinity,
-              eMaxY = -Infinity;
-            if (entity.type === "line") {
-              eMinX = Math.min(entity.x1, entity.x2);
-              eMaxX = Math.max(entity.x1, entity.x2);
-              eMinY = Math.min(entity.y1, entity.y2);
-              eMaxY = Math.max(entity.y1, entity.y2);
-            } else if (entity.type === "circle") {
-              eMinX = entity.cx - entity.radius;
-              eMaxX = entity.cx + entity.radius;
-              eMinY = entity.cy - entity.radius;
-              eMaxY = entity.cy + entity.radius;
-            } else if (entity.type === "rectangle") {
-              eMinX = entity.x;
-              eMaxX = entity.x + entity.width;
-              eMinY = entity.y;
-              eMaxY = entity.y + entity.height;
-            } else if (entity.type === "polyline") {
-              for (const p of entity.points) {
-                eMinX = Math.min(eMinX, p.x);
-                eMaxX = Math.max(eMaxX, p.x);
-                eMinY = Math.min(eMinY, p.y);
-                eMaxY = Math.max(eMaxY, p.y);
-              }
-            } else if (entity.type === "arc") {
-              eMinX = entity.cx - entity.radius;
-              eMaxX = entity.cx + entity.radius;
-              eMinY = entity.cy - entity.radius;
-              eMaxY = entity.cy + entity.radius;
-            } else if (entity.type === "ellipse") {
-              eMinX = entity.cx - entity.rx;
-              eMaxX = entity.cx + entity.rx;
-              eMinY = entity.cy - entity.ry;
-              eMaxY = entity.cy + entity.ry;
-            } else if (entity.type === "text") {
-              const t = entity as TextEntity;
-              const textWidth = t.text.length * t.fontSize * 0.6;
-              const textHeight =
-                t.fontSize * t.lineHeight * t.text.split("\n").length;
-              eMinX = t.x;
-              eMaxX = t.x + textWidth;
-              eMinY = t.y;
-              eMaxY = t.y + textHeight;
-            } else {
-              return false;
-            }
-
-            if (isWindowSelect) {
-              // Window: entity must be fully inside
-              return (
-                eMinX >= minX && eMaxX <= maxX && eMinY >= minY && eMaxY <= maxY
-              );
-            } else {
-              // Crossing: entity just needs to intersect
-              return !(
-                eMaxX < minX ||
-                eMinX > maxX ||
-                eMaxY < minY ||
-                eMinY > maxY
-              );
-            }
-          });
-          setSelectedIds(hits.map((e) => e.id));
+          const hits = getBoxSelectHits(
+            boxSelectStart,
+            end,
+            entities,
+            layers,
+            blockDefinitions,
+          );
+          setSelectedIds(hits);
+          skipNextClick.current = true;
         }
         setBoxSelectStart(null);
         setBoxSelectEnd(null);
+        setBoxPreviewIds([]);
       }
     },
     [
@@ -700,6 +944,12 @@ export default function CADCanvas() {
   const handleClick = useCallback(
     (e: React.MouseEvent) => {
       if (e.button !== 0) return;
+
+      // Skip click event that fires after box select mouseup
+      if (skipNextClick.current) {
+        skipNextClick.current = false;
+        return;
+      }
 
       // Compute ortho-constrained cursor position for tools
       let effectiveX = worldCursor.x;
@@ -722,6 +972,9 @@ export default function CADCanvas() {
         }
       }
 
+      if (activeTool === "pan") {
+        return;
+      }
       if (activeTool === "line") {
         lineTool.onMouseClick(snapPoint, effectiveX, effectiveY);
         return;
@@ -778,6 +1031,31 @@ export default function CADCanvas() {
         ["measure_dist", "measure_angle", "measure_area"].includes(activeTool)
       ) {
         measureTool.onMouseClick(snapPoint, effectiveX, effectiveY);
+        return;
+      }
+      if (activeTool === "block") {
+        blockTool.onMouseClick(snapPoint, effectiveX, effectiveY);
+        return;
+      }
+      if (activeTool === "insert") {
+        insertTool.onMouseClick(snapPoint, effectiveX, effectiveY);
+        return;
+      }
+      if (activeTool === "explode") {
+        const st = useCADStore.getState();
+        const blockRefs = st.selectedIds.filter((id) => {
+          const ent = st.entities.find((e) => e.id === id);
+          return ent && ent.type === "block_ref";
+        });
+        if (blockRefs.length > 0) {
+          for (const refId of blockRefs) {
+            st.explodeBlockRef(refId);
+          }
+          pushLog(`EXPLODE: Exploded ${blockRefs.length} block reference(s).`);
+        } else {
+          pushLog("EXPLODE: Select a block reference first.");
+        }
+        useCADStore.getState().setActiveTool("select");
         return;
       }
 
@@ -917,6 +1195,73 @@ export default function CADCanvas() {
             const d = Math.sqrt(dx * dx + dy * dy);
             return Math.abs(d - 1) < threshold / Math.min(el.rx, el.ry);
           }
+          if (entity.type === "block_ref") {
+            const ref = entity as BlockReferenceEntity;
+            const def = blockDefinitions.find((d) => d.id === ref.blockDefId);
+            if (!def) return false;
+            const transformed = getTransformedBlockEntities(
+              def,
+              ref,
+              blockDefinitions,
+            );
+            return transformed.some((te) => {
+              if (te.type === "line") {
+                const l = te as LineEntity;
+                const ddx = l.x2 - l.x1,
+                  ddy = l.y2 - l.y1;
+                const llen = Math.sqrt(ddx * ddx + ddy * ddy);
+                if (llen === 0) return false;
+                const tt = Math.max(
+                  0,
+                  Math.min(
+                    1,
+                    ((effectiveX - l.x1) * ddx + (effectiveY - l.y1) * ddy) /
+                      (llen * llen),
+                  ),
+                );
+                return (
+                  Math.sqrt(
+                    (l.x1 + tt * ddx - effectiveX) ** 2 +
+                      (l.y1 + tt * ddy - effectiveY) ** 2,
+                  ) < threshold
+                );
+              }
+              if (te.type === "circle") {
+                const c = te as CircleEntity;
+                return (
+                  Math.abs(
+                    Math.sqrt(
+                      (effectiveX - c.cx) ** 2 + (effectiveY - c.cy) ** 2,
+                    ) - c.radius,
+                  ) < threshold
+                );
+              }
+              if (te.type === "rectangle") {
+                const r = te as RectangleEntity;
+                const onHH =
+                  Math.abs(effectiveY - r.y) < threshold ||
+                  Math.abs(effectiveY - r.y - r.height) < threshold;
+                const onVV =
+                  Math.abs(effectiveX - r.x) < threshold ||
+                  Math.abs(effectiveX - r.x - r.width) < threshold;
+                const inXX =
+                  effectiveX >= r.x - threshold &&
+                  effectiveX <= r.x + r.width + threshold;
+                const inYY =
+                  effectiveY >= r.y - threshold &&
+                  effectiveY <= r.y + r.height + threshold;
+                return (onHH && inXX) || (onVV && inYY);
+              }
+              // Fallback: check near insertion point
+              return (
+                Math.sqrt(
+                  (effectiveX - ref.insertX) ** 2 +
+                    (effectiveY - ref.insertY) ** 2,
+                ) <
+                threshold * 3
+              );
+            });
+          }
           return false;
         });
         if (hit) {
@@ -956,6 +1301,9 @@ export default function CADCanvas() {
       filletTool,
       measureTool,
       orthoMode,
+      blockTool,
+      insertTool,
+      blockDefinitions,
     ],
   );
 
@@ -1005,6 +1353,8 @@ export default function CADCanvas() {
         ? "Type text and press Enter"
         : "Click to set text position";
     }
+    if (activeTool === "pan")
+      return "Click and drag to pan view | ESC = select";
     if (activeTool === "ellipse") {
       return ellipseTool.center
         ? "Click to set semi-axes (corner point)"
@@ -1019,6 +1369,11 @@ export default function CADCanvas() {
         : "FILLET: Click second line";
     }
     if (measureTool.mode) return measureTool.getHintText();
+
+    if (blockTool.step !== "idle") return blockTool.getHintText();
+    if (insertTool.step !== "idle") return insertTool.getHintText();
+    if (activeTool === "explode")
+      return "EXPLODE: Select block reference then click or Enter";
 
     if (modifyTool.isActive) {
       return modifyTool.getHintText();
@@ -1052,12 +1407,13 @@ export default function CADCanvas() {
   return (
     <div
       ref={containerRef}
-      className="cad-canvas-container"
+      className={`cad-canvas-container${blockEditorDefId ? " block-editor-mode" : ""}${activeTool === "pan" ? " pan-mode" : ""}`}
       onWheel={handleWheel}
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onClick={handleClick}
+      onDoubleClick={handleDoubleClick}
     >
       <Stage width={size.width} height={size.height}>
         {/* ── Grid ── */}
@@ -1081,8 +1437,31 @@ export default function CADCanvas() {
             if (entityLayer && !entityLayer.visible) return null;
 
             const sel = selectedIds.includes(entity.id);
-            const stroke = sel ? "#4fc3f7" : (entity.color ?? "#ffffff");
-            const sw1 = sw(sel ? 2 : 1);
+            const previewing = !sel && boxPreviewIds.includes(entity.id);
+            const entityColor = entity.color ?? "#ffffff";
+            // Preview: keep original color + glow in entity color
+            // Selected: blue stroke + blue glow
+            const stroke = sel ? "#4fc3f7" : entityColor;
+            const sw1 = sw(sel ? 2 : previewing ? 2 : 1);
+            // Glow effect
+            const glowProps = sel
+              ? {
+                  shadowColor: "#4fc3f7",
+                  shadowBlur: 10,
+                  shadowEnabled: true,
+                  shadowForStrokeEnabled: true,
+                  shadowOpacity: 0.7,
+                }
+              : previewing
+                ? {
+                    shadowColor: entityColor,
+                    shadowBlur: 15,
+                    shadowEnabled: true,
+                    shadowForStrokeEnabled: true,
+                    shadowOpacity: 0.9,
+                  }
+                : {};
+            const highlighted = sel || previewing;
 
             if (entity.type === "line") {
               const l = entity as LineEntity;
@@ -1093,6 +1472,7 @@ export default function CADCanvas() {
                   stroke={stroke}
                   strokeWidth={sw1}
                   listening={false}
+                  {...glowProps}
                 />
               );
             }
@@ -1107,8 +1487,9 @@ export default function CADCanvas() {
                   height={r.height}
                   stroke={stroke}
                   strokeWidth={sw1}
-                  fill={sel ? "rgba(79,195,247,0.07)" : "transparent"}
+                  fill={highlighted ? "rgba(79,195,247,0.07)" : "transparent"}
                   listening={false}
+                  {...glowProps}
                 />
               );
             }
@@ -1122,8 +1503,9 @@ export default function CADCanvas() {
                   radius={c.radius}
                   stroke={stroke}
                   strokeWidth={sw1}
-                  fill={sel ? "rgba(79,195,247,0.07)" : "transparent"}
+                  fill={highlighted ? "rgba(79,195,247,0.07)" : "transparent"}
                   listening={false}
+                  {...glowProps}
                 />
               );
             }
@@ -1138,6 +1520,7 @@ export default function CADCanvas() {
                   stroke={stroke}
                   strokeWidth={sw1}
                   listening={false}
+                  {...glowProps}
                 />
               );
             }
@@ -1157,6 +1540,7 @@ export default function CADCanvas() {
                   strokeWidth={sw1}
                   fill="transparent"
                   listening={false}
+                  {...glowProps}
                 />
               );
             }
@@ -1190,6 +1574,7 @@ export default function CADCanvas() {
                   align={t.alignment}
                   lineHeight={t.lineHeight}
                   listening={false}
+                  {...glowProps}
                 />
               );
             }
@@ -1205,9 +1590,152 @@ export default function CADCanvas() {
                   rotation={(el.rotation * 180) / Math.PI}
                   stroke={stroke}
                   strokeWidth={sw1}
-                  fill={sel ? "rgba(79,195,247,0.07)" : "transparent"}
+                  fill={highlighted ? "rgba(79,195,247,0.07)" : "transparent"}
                   listening={false}
+                  {...glowProps}
                 />
+              );
+            }
+            if (entity.type === "block_ref") {
+              const ref = entity as BlockReferenceEntity;
+              const def = blockDefinitions.find((d) => d.id === ref.blockDefId);
+              if (!def) return null;
+              const transformed = getTransformedBlockEntities(
+                def,
+                ref,
+                blockDefinitions,
+              );
+              const blockStroke = sel ? "#4fc3f7" : (entity.color ?? "#ffffff");
+              const blockSw = sw(sel ? 2 : 1);
+              return (
+                <Group key={entity.id}>
+                  {transformed.map((te, ti) => {
+                    if (te.type === "line") {
+                      const l = te as LineEntity;
+                      return (
+                        <Line
+                          key={ti}
+                          points={[l.x1, l.y1, l.x2, l.y2]}
+                          stroke={blockStroke}
+                          strokeWidth={blockSw}
+                          listening={false}
+                          {...glowProps}
+                        />
+                      );
+                    }
+                    if (te.type === "circle") {
+                      const c = te as CircleEntity;
+                      return (
+                        <Circle
+                          key={ti}
+                          x={c.cx}
+                          y={c.cy}
+                          radius={c.radius}
+                          stroke={blockStroke}
+                          strokeWidth={blockSw}
+                          listening={false}
+                          {...glowProps}
+                        />
+                      );
+                    }
+                    if (te.type === "rectangle") {
+                      const r = te as RectangleEntity;
+                      return (
+                        <Rect
+                          key={ti}
+                          x={r.x}
+                          y={r.y}
+                          width={r.width}
+                          height={r.height}
+                          stroke={blockStroke}
+                          strokeWidth={blockSw}
+                          listening={false}
+                          {...glowProps}
+                        />
+                      );
+                    }
+                    if (te.type === "arc") {
+                      const a = te as ArcEntity;
+                      return (
+                        <Path
+                          key={ti}
+                          data={arcToPath(
+                            a.cx,
+                            a.cy,
+                            a.radius,
+                            a.startAngle,
+                            a.endAngle,
+                          )}
+                          stroke={blockStroke}
+                          strokeWidth={blockSw}
+                          fill="transparent"
+                          listening={false}
+                          {...glowProps}
+                        />
+                      );
+                    }
+                    if (te.type === "polyline") {
+                      const p = te as PolylineEntity;
+                      const pts = p.points.flatMap((pt) => [pt.x, pt.y]);
+                      if (p.closed) pts.push(p.points[0].x, p.points[0].y);
+                      return (
+                        <Line
+                          key={ti}
+                          points={pts}
+                          stroke={blockStroke}
+                          strokeWidth={blockSw}
+                          listening={false}
+                          {...glowProps}
+                        />
+                      );
+                    }
+                    if (te.type === "ellipse") {
+                      const el = te as EllipseEntity;
+                      return (
+                        <Ellipse
+                          key={ti}
+                          x={el.cx}
+                          y={el.cy}
+                          radiusX={el.rx}
+                          radiusY={el.ry}
+                          rotation={(el.rotation * 180) / Math.PI}
+                          stroke={blockStroke}
+                          strokeWidth={blockSw}
+                          listening={false}
+                          {...glowProps}
+                        />
+                      );
+                    }
+                    if (te.type === "text") {
+                      const t = te as TextEntity;
+                      return (
+                        <Text
+                          key={ti}
+                          x={t.x}
+                          y={t.y}
+                          text={t.text}
+                          fontSize={t.fontSize}
+                          fontFamily={t.fontFamily}
+                          fill={blockStroke}
+                          listening={false}
+                          {...glowProps}
+                        />
+                      );
+                    }
+                    return null;
+                  })}
+                  {/* Insertion point marker - only shown when selected */}
+                  {sel && (
+                    <Circle
+                      x={ref.insertX}
+                      y={ref.insertY}
+                      radius={sw(2)}
+                      stroke={blockStroke}
+                      strokeWidth={sw(0.5)}
+                      listening={false}
+                    />
+                  )}
+                </Group>
               );
             }
             return null;
@@ -1771,6 +2299,112 @@ export default function CADCanvas() {
               />
             </>
           )}
+          {/* ── Insert preview ── */}
+          {activeTool === "insert" &&
+            insertTool.step === "place" &&
+            insertTool.previewPos && (
+              <Group opacity={0.5}>
+                {insertTool.getPreviewEntities().map((te, ti) => {
+                  if (te.type === "line") {
+                    const l = te as LineEntity;
+                    return (
+                      <Line
+                        key={ti}
+                        points={[l.x1, l.y1, l.x2, l.y2]}
+                        stroke="#00ffff"
+                        strokeWidth={sw(1)}
+                        dash={[sw(6), sw(4)]}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (te.type === "circle") {
+                    const c = te as CircleEntity;
+                    return (
+                      <Circle
+                        key={ti}
+                        x={c.cx}
+                        y={c.cy}
+                        radius={c.radius}
+                        stroke="#00ffff"
+                        strokeWidth={sw(1)}
+                        dash={[sw(6), sw(4)]}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (te.type === "rectangle") {
+                    const r = te as RectangleEntity;
+                    return (
+                      <Rect
+                        key={ti}
+                        x={r.x}
+                        y={r.y}
+                        width={r.width}
+                        height={r.height}
+                        stroke="#00ffff"
+                        strokeWidth={sw(1)}
+                        dash={[sw(6), sw(4)]}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (te.type === "arc") {
+                    const a = te as ArcEntity;
+                    return (
+                      <Path
+                        key={ti}
+                        data={arcToPath(
+                          a.cx,
+                          a.cy,
+                          a.radius,
+                          a.startAngle,
+                          a.endAngle,
+                        )}
+                        stroke="#00ffff"
+                        strokeWidth={sw(1)}
+                        fill="transparent"
+                        dash={[sw(6), sw(4)]}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (te.type === "polyline") {
+                    const p = te as PolylineEntity;
+                    const pts = p.points.flatMap((pt) => [pt.x, pt.y]);
+                    if (p.closed) pts.push(p.points[0].x, p.points[0].y);
+                    return (
+                      <Line
+                        key={ti}
+                        points={pts}
+                        stroke="#00ffff"
+                        strokeWidth={sw(1)}
+                        dash={[sw(6), sw(4)]}
+                        listening={false}
+                      />
+                    );
+                  }
+                  if (te.type === "ellipse") {
+                    const el = te as EllipseEntity;
+                    return (
+                      <Ellipse
+                        key={ti}
+                        x={el.cx}
+                        y={el.cy}
+                        radiusX={el.rx}
+                        radiusY={el.ry}
+                        rotation={(el.rotation * 180) / Math.PI}
+                        stroke="#00ffff"
+                        strokeWidth={sw(1)}
+                        dash={[sw(6), sw(4)]}
+                        listening={false}
+                      />
+                    );
+                  }
+                  return null;
+                })}
+              </Group>
+            )}
         </Layer>
 
         {/* ── Snap indicators (screen space) ── */}
@@ -1782,7 +2416,7 @@ export default function CADCanvas() {
               width={12}
               height={12}
               stroke="#ffff00"
-              strokeWidth={1.5}
+              strokeWidth={2}
               fill="transparent"
             />
           )}
@@ -1793,7 +2427,7 @@ export default function CADCanvas() {
               width={10}
               height={10}
               stroke="#00ff88"
-              strokeWidth={1.5}
+              strokeWidth={2}
               fill="transparent"
               rotation={45}
             />
@@ -1804,7 +2438,7 @@ export default function CADCanvas() {
               y={snapScreen.y}
               radius={6}
               stroke="#ffff00"
-              strokeWidth={1.5}
+              strokeWidth={2}
               fill="transparent"
             />
           )}
@@ -1815,7 +2449,7 @@ export default function CADCanvas() {
               width={10}
               height={10}
               stroke="#00bcd4"
-              strokeWidth={1.5}
+              strokeWidth={2}
               fill="transparent"
               rotation={45}
             />
@@ -1830,7 +2464,7 @@ export default function CADCanvas() {
                   snapScreen.y + 5,
                 ]}
                 stroke="#ff4444"
-                strokeWidth={1.5}
+                strokeWidth={2}
               />
               <Line
                 points={[
@@ -1840,7 +2474,7 @@ export default function CADCanvas() {
                   snapScreen.y + 5,
                 ]}
                 stroke="#ff4444"
-                strokeWidth={1.5}
+                strokeWidth={2}
               />
             </>
           )}
@@ -1850,7 +2484,7 @@ export default function CADCanvas() {
               y={snapScreen.y}
               radius={4}
               stroke="#ffaa44"
-              strokeWidth={1.5}
+              strokeWidth={2}
               fill="transparent"
             />
           )}
@@ -1920,10 +2554,10 @@ export default function CADCanvas() {
         </div>
       )}
       {/* Text input overlay */}
-      {textInputActive && textTool.insertPoint && (
+      {textInputActive && (textTool.insertPoint || editingTextId) && (
         <div className="text-input-overlay">
           <div className="text-input-header">
-            <span>Text Input</span>
+            <span>{editingTextId ? "Text Edit" : "Text Input"}</span>
             <div className="text-input-options">
               <label>
                 Size:
@@ -1951,13 +2585,25 @@ export default function CADCanvas() {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
                 if (textInputValue.trim()) {
-                  textTool.commit(textInputValue, { fontSize: textFontSize });
+                  if (editingTextId) {
+                    updateEntity(editingTextId, {
+                      text: textInputValue,
+                      fontSize: textFontSize,
+                    });
+                    pushLog("TEXT updated.");
+                  } else {
+                    textTool.commit(textInputValue, {
+                      fontSize: textFontSize,
+                    });
+                  }
                 }
+                setEditingTextId(null);
                 setTextInputActive(false);
                 setTextInputValue("");
               }
               if (e.key === "Escape") {
-                textTool.cancel();
+                if (!editingTextId) textTool.cancel();
+                setEditingTextId(null);
                 setTextInputActive(false);
                 setTextInputValue("");
               }
@@ -2154,6 +2800,202 @@ export default function CADCanvas() {
           <span className="offset-input-hint">
             Masukkan panjang segmen lalu klik titik akhir
           </span>
+        </div>
+      )}
+      {/* Define Block Dialog */}
+      {blockNameInputActive && (
+        <div className="block-dialog-overlay">
+          <div className="block-dialog">
+            <div className="block-dialog-title">Define Block</div>
+            <div className="block-dialog-body">
+              <div className="block-dialog-row">
+                <label className="block-dialog-label">Name:</label>
+                <input
+                  ref={blockNameInputRef}
+                  className="block-dialog-input"
+                  type="text"
+                  value={blockNameInputValue}
+                  onChange={(e) => setBlockNameInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    e.stopPropagation();
+                    if (e.key === "Enter" && blockNameInputValue.trim()) {
+                      blockTool.confirmName(blockNameInputValue);
+                      setBlockNameInputActive(false);
+                    }
+                    if (e.key === "Escape") {
+                      setBlockNameInputActive(false);
+                      blockTool.cancel();
+                    }
+                  }}
+                  placeholder="Enter block name"
+                  autoFocus
+                />
+              </div>
+              <div className="block-dialog-section">
+                <div className="block-dialog-section-title">Source Objects</div>
+                <div className="block-dialog-info">
+                  {useCADStore.getState().selectedIds.length} object(s) selected
+                </div>
+                <div className="block-dialog-radio-group">
+                  <label className="block-dialog-radio">
+                    <input
+                      type="radio"
+                      name="blockAction"
+                      value="convert"
+                      defaultChecked
+                    />
+                    <span>Convert to block</span>
+                  </label>
+                  <label className="block-dialog-radio">
+                    <input type="radio" name="blockAction" value="retain" />
+                    <span>Retain objects</span>
+                  </label>
+                </div>
+              </div>
+              <div className="block-dialog-section">
+                <div className="block-dialog-section-title">Base Point</div>
+                <div className="block-dialog-info" style={{ color: "#ffaa44" }}>
+                  Click on canvas after creating to set base point
+                </div>
+              </div>
+              <div className="block-dialog-section">
+                <div className="block-dialog-section-title">Description</div>
+                <textarea
+                  className="block-dialog-textarea"
+                  placeholder="Add a description for the block"
+                  rows={2}
+                />
+              </div>
+            </div>
+            <div className="block-dialog-footer">
+              <button
+                className="block-dialog-btn cancel"
+                onClick={() => {
+                  setBlockNameInputActive(false);
+                  blockTool.cancel();
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                className="block-dialog-btn primary"
+                onClick={() => {
+                  if (blockNameInputValue.trim()) {
+                    blockTool.confirmName(blockNameInputValue);
+                    setBlockNameInputActive(false);
+                  }
+                }}
+                disabled={!blockNameInputValue.trim()}
+              >
+                Create Block
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Block picker */}
+      {blockPickerActive && (
+        <div className="offset-input-overlay" style={{ minWidth: 200 }}>
+          <span>Select block:</span>
+          <div
+            style={{
+              maxHeight: 200,
+              overflowY: "auto",
+              display: "flex",
+              flexDirection: "column",
+              gap: 4,
+              marginTop: 4,
+            }}
+          >
+            {blockDefinitions.map((def) => (
+              <button
+                key={def.id}
+                onClick={() => {
+                  insertTool.selectBlock(def.id);
+                  setBlockPickerActive(false);
+                }}
+                style={{
+                  background: "rgba(255,255,255,0.1)",
+                  border: "1px solid rgba(255,255,255,0.2)",
+                  color: "#fff",
+                  padding: "4px 8px",
+                  borderRadius: 3,
+                  cursor: "pointer",
+                  textAlign: "left" as const,
+                  fontSize: 12,
+                }}
+              >
+                {def.name} ({def.entities.length} entities)
+              </button>
+            ))}
+          </div>
+          <span className="offset-input-hint">
+            Click to select | ESC = cancel
+          </span>
+        </div>
+      )}
+      {/* Block editor banner */}
+      {blockEditorDefId && (
+        <div
+          style={{
+            position: "absolute",
+            top: 8,
+            left: "50%",
+            transform: "translateX(-50%)",
+            background: "rgba(255, 152, 0, 0.9)",
+            color: "#000",
+            padding: "6px 16px",
+            borderRadius: 6,
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            fontSize: 13,
+            fontWeight: 600,
+            zIndex: 100,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.3)",
+          }}
+        >
+          <span>
+            📐 Block Editor:{" "}
+            {blockDefinitions.find((d) => d.id === blockEditorDefId)?.name ??
+              "Unknown"}
+          </span>
+          <button
+            onClick={() => {
+              exitBlockEditor(true);
+              pushLog("BCLOSE: Saved and closed.");
+            }}
+            style={{
+              background: "rgba(0,0,0,0.2)",
+              border: "1px solid rgba(0,0,0,0.3)",
+              color: "#000",
+              padding: "3px 10px",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            ✓ Save Block
+          </button>
+          <button
+            onClick={() => {
+              exitBlockEditor(false);
+              pushLog("BEDIT: Discarded changes.");
+            }}
+            style={{
+              background: "rgba(0,0,0,0.2)",
+              border: "1px solid rgba(0,0,0,0.3)",
+              color: "#000",
+              padding: "3px 10px",
+              borderRadius: 4,
+              cursor: "pointer",
+              fontSize: 12,
+              fontWeight: 600,
+            }}
+          >
+            ✕ Discard
+          </button>
         </div>
       )}
       {hintText && <div className="tool-hint">{hintText}</div>}
