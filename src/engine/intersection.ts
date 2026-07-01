@@ -531,6 +531,9 @@ function entityToSegments(entity: CADEntity): Segment[] | null {
     case "dimension":
     case "text":
       return null; // non-geometric
+
+    default:
+      return null;
   }
 }
 
